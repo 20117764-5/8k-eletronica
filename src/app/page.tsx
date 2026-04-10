@@ -1,43 +1,76 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+
+interface Funcionario {
+  id: number;
+  nome: string;
+  email: string;
+  cargo: string | null;
+}
 
 export default function LoginPage() {
   const router = useRouter();
   
-  const [email, setEmail] = useState('');
+  const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
+  const [emailSelecionado, setEmailSelecionado] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isFetching, setIsFetching] = useState(true);
+
+  // Busca os funcionários no banco de dados assim que a tela abre
+  useEffect(() => {
+    async function carregarFuncionarios() {
+      try {
+        const { data, error } = await supabase
+          .from('funcionarios')
+          .select('*')
+          .order('nome', { ascending: true });
+
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          setFuncionarios(data);
+          setEmailSelecionado(data[0].email); // Já deixa o primeiro selecionado
+        }
+      } catch (error) {
+        console.error("Erro ao carregar lista de funcionários:", error);
+        setErrorMessage("Erro ao conectar com o banco de dados.");
+      } finally {
+        setIsFetching(false);
+      }
+    }
+    carregarFuncionarios();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!emailSelecionado) return setErrorMessage('Selecione um usuário.');
+
     setIsLoading(true);
     setErrorMessage('');
 
     try {
-      // Tenta fazer o login no Supabase
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email,
+        email: emailSelecionado,
         password: password,
       });
 
       if (error) {
-        // Se der erro (senha errada, utilizador não existe, etc.)
-        setErrorMessage('E-mail ou senha incorretos. Tente novamente.');
+        setErrorMessage('Senha incorreta. Tente novamente.');
         return;
       }
 
       if (data.session) {
-        // Sucesso! Redireciona para o painel
         router.push('/dashboard');
       }
       
     } catch (error) {
       console.error("Erro inesperado no login:", error);
-      setErrorMessage('Ocorreu um erro no servidor. Verifique sua conexão.');
+      setErrorMessage('Ocorreu um erro de conexão.');
     } finally {
       setIsLoading(false);
     }
@@ -50,77 +83,81 @@ export default function LoginPage() {
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-[#38bdf8] rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-[#0a6787] rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
 
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-[#e0f1f7] p-8 md:p-10 relative z-10">
+      <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-[#e0f1f7] p-8 relative z-10">
         
-        {/* Cabeçalho do Login */}
-        <div className="text-center mb-10">
-          <div className="w-20 h-20 bg-[#0a6787] rounded-2xl mx-auto flex items-center justify-center text-4xl font-black text-white shadow-lg mb-4 transform rotate-3 hover:rotate-0 transition-transform">
+        {/* Cabeçalho */}
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-[#0a6787] rounded-2xl mx-auto flex items-center justify-center text-3xl font-black text-white shadow-lg mb-4 transform rotate-3">
             💎
           </div>
-          <h1 className="text-3xl font-black text-[#0a6787] tracking-tight">8K Eletrônica</h1>
-          <p className="text-[#73a8bd] font-medium mt-2 text-sm uppercase tracking-widest">Sistema de Gestão</p>
+          <h1 className="text-2xl font-black text-[#0a6787] tracking-tight">8K Eletrônica</h1>
         </div>
 
-        {/* Mensagem de Erro (Só aparece se falhar o login) */}
         {errorMessage && (
-          <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded-r-xl flex items-center gap-3">
-            <span className="text-xl">⚠️</span>
-            <p className="text-sm font-bold text-red-700">{errorMessage}</p>
+          <div className="mb-6 p-3 bg-red-50 border-l-4 border-red-500 rounded-r-lg flex items-center gap-2">
+            <span className="text-lg">⚠️</span>
+            <p className="text-xs font-bold text-red-700">{errorMessage}</p>
           </div>
         )}
 
-        {/* Formulário */}
-        <form onSubmit={handleLogin} className="space-y-6">
+        {/* Formulário Estilo SH Oficina mas Moderno */}
+        <form onSubmit={handleLogin} className="space-y-5">
+          
           <div>
-            <label className="block text-xs font-black text-[#0a6787] uppercase tracking-wider mb-2">
-              E-mail de Acesso
+            <label className="block text-[10px] font-black text-[#73a8bd] uppercase tracking-wider mb-1">
+              Usuário
             </label>
-            <input 
-              type="email" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="exemplo@8keletronica.com.br" 
-              className="w-full px-5 py-4 bg-[#f8fcff] border-2 border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold focus:outline-none focus:border-[#38bdf8] focus:ring-4 focus:ring-[#38bdf8]/10 transition-all placeholder:text-[#a3d8e8] placeholder:font-normal"
-              required 
-            />
+            {isFetching ? (
+              <div className="w-full px-4 py-3 bg-[#f8fcff] border-2 border-[#e0f1f7] rounded-xl text-[#73a8bd] font-bold animate-pulse text-sm">
+                Carregando...
+              </div>
+            ) : (
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl">👤</span>
+                <select 
+                  value={emailSelecionado}
+                  onChange={(e) => setEmailSelecionado(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3 bg-[#f8fcff] border-2 border-[#e0f1f7] rounded-xl text-[#0a6787] font-black focus:outline-none focus:border-[#38bdf8] focus:ring-4 focus:ring-[#38bdf8]/10 transition-all text-sm appearance-none cursor-pointer"
+                >
+                  {funcionarios.map(func => (
+                    <option key={func.id} value={func.email}>
+                      {func.nome} {func.cargo ? `(${func.cargo})` : ''}
+                    </option>
+                  ))}
+                </select>
+                {/* Seta customizada do dropdown */}
+                <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-[#0a6787]">
+                  ▼
+                </div>
+              </div>
+            )}
           </div>
 
           <div>
-            <label className="block text-xs font-black text-[#0a6787] uppercase tracking-wider mb-2">
+            <label className="block text-[10px] font-black text-[#73a8bd] uppercase tracking-wider mb-1">
               Senha
             </label>
-            <input 
-              type="password" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••" 
-              className="w-full px-5 py-4 bg-[#f8fcff] border-2 border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold focus:outline-none focus:border-[#38bdf8] focus:ring-4 focus:ring-[#38bdf8]/10 transition-all placeholder:text-[#a3d8e8]"
-              required 
-            />
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl">🔒</span>
+              <input 
+                type="password" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••" 
+                className="w-full pl-12 pr-4 py-3 bg-[#f8fcff] border-2 border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold focus:outline-none focus:border-[#38bdf8] focus:ring-4 focus:ring-[#38bdf8]/10 transition-all tracking-[0.3em] text-lg"
+                required 
+              />
+            </div>
           </div>
 
           <button 
             type="submit" 
-            disabled={isLoading || !email || !password}
-            className="w-full py-4 bg-[#0a6787] text-white font-black rounded-xl hover:bg-[#08526c] shadow-lg shadow-[#0a6787]/30 transition-all disabled:opacity-50 disabled:hover:bg-[#0a6787] flex justify-center items-center gap-2 mt-4"
+            disabled={isLoading || !password || isFetching}
+            className="w-full py-4 bg-[#0a6787] text-white font-black rounded-xl hover:bg-[#08526c] shadow-lg shadow-[#0a6787]/30 transition-all disabled:opacity-50 disabled:hover:bg-[#0a6787] flex justify-center items-center gap-2 mt-2"
           >
-            {isLoading ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Acessando...
-              </>
-            ) : (
-              "Entrar no Sistema"
-            )}
+            {isLoading ? "Acessando..." : "Entrar no Sistema"}
           </button>
         </form>
-        
-        <div className="mt-8 text-center border-t border-[#e0f1f7] pt-6">
-          <p className="text-xs text-[#73a8bd]">Área restrita a funcionários.</p>
-        </div>
 
       </div>
     </div>
