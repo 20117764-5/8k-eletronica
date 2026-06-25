@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, Suspense } from 'react';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { buildPdfHeader, getPdfBrandImage } from '@/lib/pdfBranding';
 
 // PDFMake Configurações
 import * as pdfMakeModule from 'pdfmake/build/pdfmake';
@@ -150,8 +150,9 @@ function HistoricoForm() {
   // ==========================================
   // RELATÓRIO GERENCIAL EM PDF
   // ==========================================
-  const imprimirRelatorio = () => {
+  const imprimirRelatorio = async () => {
     if (historico.length === 0) return alert("Não há dados para imprimir neste mês.");
+    const brandImage = await getPdfBrandImage();
 
     const tableBody = historico.map(os => [
       String(os.id).padStart(5, '0'),
@@ -167,8 +168,15 @@ function HistoricoForm() {
       pageMargins: [30, 40, 30, 40],
       defaultStyle: { fontSize: 9 },
       content: [
-        { text: '8K ELETRÔNICA', fontSize: 18, bold: true, alignment: 'center', color: '#0a6787' },
-        { text: `RELATÓRIO GERENCIAL - ${mesFormatado}`, fontSize: 12, bold: true, alignment: 'center', margin: [0, 5, 0, 20] },
+        buildPdfHeader({
+          brandImage,
+          title: `RELATÓRIO GERENCIAL - ${mesFormatado}`,
+          rightLines: [
+            { text: `Entradas: ${totalEntradas}`, bold: true },
+            { text: `Encerradas: ${totalEncerradas}`, bold: true },
+            { text: `Faturamento: R$ ${faturamento.toFixed(2)}`, bold: true, color: '#d8a900' },
+          ],
+        }),
         
         // Quadros de Resumo no PDF corrigidos (Transformados em tabela sem borda para aceitar fillColor nativo)
         {

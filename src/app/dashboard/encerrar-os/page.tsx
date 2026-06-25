@@ -1,9 +1,10 @@
 "use client";
 
 import Link from 'next/link';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
+import { buildPdfHeader, getPdfBrandImage } from '@/lib/pdfBranding';
 
 // PDFMake Configurações
 import * as pdfMakeModule from 'pdfmake/build/pdfmake';
@@ -50,7 +51,6 @@ interface OSData {
 
 function EncerrarOsForm() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const osId = searchParams.get('id');
 
   const [osData, setOsData] = useState<OSData | null>(null);
@@ -110,8 +110,9 @@ function EncerrarOsForm() {
   const valorFinal = subTotal - valorDesconto;
 
   // GERAR PDF DE ENCERRAMENTO (Com ou Sem Garantia)
-  const gerarPdfEncerramento = () => {
+  const gerarPdfEncerramento = async () => {
     if (!osData || !cliente) return;
+    const brandImage = await getPdfBrandImage();
 
     const dataAtual = new Date();
     const dataAtualStr = dataAtual.toLocaleDateString('pt-BR');
@@ -131,17 +132,14 @@ function EncerrarOsForm() {
       pageSize: 'A4', pageMargins: [30, 30, 30, 30],
       defaultStyle: { fontSize: 9 },
       content: [
-        {
-          table: {
-            widths: ['*', 150],
-            body: [
-              [
-                { text: '8K ELETRÔNICA\nAv. Eng. Antonio de Goes, 340 Loja 01 Recife - PE\n(81) 3465-6042 / 98883-9428\nChave PIX (CNPJ: 34.700.879/0001-04)', margin: [0, 5, 0, 5] },
-                { text: `O.S. Nº: ${String(osData.id).padStart(5, '0')}\nDATA SAÍDA:\n${dataAtualStr} às ${horaAtualStr}`, alignment: 'right', bold: true, margin: [0, 5, 5, 5] }
-              ]
-            ]
-          }, margin: [0, 0, 0, 10]
-        },
+        buildPdfHeader({
+          brandImage,
+          title: 'FICHA DE SAÍDA / ENCERRAMENTO',
+          rightLines: [
+            { text: `O.S. Nº ${String(osData.id).padStart(5, '0')}`, fontSize: 14, bold: true, color: '#111111' },
+            { text: `DATA SAÍDA: ${dataAtualStr} às ${horaAtualStr}`, fontSize: 9, bold: true },
+          ],
+        }),
         {
           table: {
             widths: ['*', '*', 100],
@@ -240,7 +238,7 @@ function EncerrarOsForm() {
 
       alert('O.S. Encerrada com sucesso!');
       setIsJaEncerrada(true);
-      gerarPdfEncerramento(); // Já abre a impressão na hora
+      await gerarPdfEncerramento(); // Já abre a impressão na hora
       
     } catch (error) {
       console.error(error);
@@ -269,7 +267,7 @@ function EncerrarOsForm() {
           <Link href="/dashboard" className="px-6 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200">
             Voltar ao Início
           </Link>
-          <button onClick={gerarPdfEncerramento} className="px-6 py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 shadow-md flex items-center gap-2">
+          <button onClick={() => void gerarPdfEncerramento()} className="px-6 py-3 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 shadow-md flex items-center gap-2">
             <span>🖨️</span> Reimprimir Ficha de Saída
           </button>
         </div>

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { runSupabaseQuery, SessionExpiredError } from '@/lib/supabaseSession';
 
 interface Cliente {
   id: number;
@@ -49,16 +50,21 @@ export default function NovaOSPage() {
     setBuscaRealizada(true);
 
     try {
-      const { data, error } = await supabase
-        .from('clientes')
-        .select('*')
-        .ilike(tipoBusca, `%${termoBusca}%`)
-        .order('nome_completo', { ascending: true })
-        .limit(50);
-
-      if (error) throw error;
+      const data = await runSupabaseQuery<Cliente[]>(() =>
+        supabase
+          .from('clientes')
+          .select('*')
+          .ilike(tipoBusca, `%${termoBusca}%`)
+          .order('nome_completo', { ascending: true })
+          .limit(50)
+      );
       setResultados(data || []);
     } catch (error) {
+      if (error instanceof SessionExpiredError) {
+        alert('Sua sessão expirou. Faça login novamente para continuar.');
+        router.push('/');
+        return;
+      }
       console.error("Erro ao buscar clientes:", error);
       alert("Ocorreu um erro ao buscar os clientes.");
     } finally {
@@ -80,13 +86,13 @@ export default function NovaOSPage() {
     setIsHistoricoOpen(true);
 
     try {
-      const { data, error } = await supabase
-        .from('ordens_servico')
-        .select('id, aparelho_tipo, marca, modelo, serial_imei, data_encerramento, condicao_encerramento')
-        .eq('cliente_id', cliente.id)
-        .order('id', { ascending: false });
-
-      if (error) throw error;
+      const data = await runSupabaseQuery<OSData[]>(() =>
+        supabase
+          .from('ordens_servico')
+          .select('id, aparelho_tipo, marca, modelo, serial_imei, data_encerramento, condicao_encerramento')
+          .eq('cliente_id', cliente.id)
+          .order('id', { ascending: false })
+      );
 
       if (!data || data.length === 0) {
         // Se não tem histórico, vai direto para nova O.S em branco
@@ -96,6 +102,11 @@ export default function NovaOSPage() {
         setHistoricoAparelhos(data);
       }
     } catch (error) {
+      if (error instanceof SessionExpiredError) {
+        alert('Sua sessão expirou. Faça login novamente para continuar.');
+        router.push('/');
+        return;
+      }
       console.error("Erro ao buscar histórico:", error);
       router.push(`/dashboard/dados-os?clienteId=${cliente.id}`); // Em caso de erro, segue o fluxo normal
     } finally {

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
 import { supabase } from '@/lib/supabase'; 
+import { buildPdfHeader, getPdfBrandImage } from '@/lib/pdfBranding';
 
 // Importações para gerar o PDF
 import * as pdfMakeModule from 'pdfmake/build/pdfmake';
@@ -59,6 +60,69 @@ interface OSData {
   tecnico_resp: string | null;
   prioridade: string;
   status: string;
+}
+
+const TIPOS_APARELHO_OS = [
+  'TV',
+  'Som',
+  'Forno-microondas',
+  'Computador',
+  'Notebook',
+  'Celular',
+  'Tablet',
+  'Inversor solar',
+  'Monitor',
+  'Projetor',
+  'Videogame',
+  'Outro aparelho eletrônico',
+];
+
+function normalizarTelefoneWhatsApp(telefone: string | null) {
+  const digitos = (telefone || '').replace(/\D/g, '');
+  if (!digitos) return null;
+  if (digitos.startsWith('55')) return digitos;
+  if (digitos.length === 10 || digitos.length === 11) return `55${digitos}`;
+  return digitos;
+}
+
+function montarMensagemWhatsApp(osData: OSData, cliente: ClienteData) {
+  const osNumero = String(osData.id).padStart(5, '0');
+  const modelo = osData.modelo ? ` ${osData.modelo}` : '';
+  const serial = osData.serial_imei ? `\nSérie/IMEI: ${osData.serial_imei}` : '';
+
+  return [
+    `Olá, ${cliente.nome_completo}!`,
+    '',
+    `Sua Ordem de Serviço nº ${osNumero} foi aberta na 8K Eletrônica.`,
+    '',
+    `Aparelho: ${osData.aparelho_tipo}`,
+    `Marca/modelo: ${osData.marca}${modelo}`,
+    serial,
+    `Defeito informado: ${osData.defeito_reclamacao}`,
+    '',
+    'A equipe técnica vai avaliar o aparelho e avisar você sobre o andamento.',
+    '',
+    '8K Eletrônica - Assistência Técnica Especializada',
+  ].filter(Boolean).join('\n');
+}
+
+function abrirWhatsAppOS(osData: OSData, cliente: ClienteData, janela?: Window | null) {
+  const telefone = normalizarTelefoneWhatsApp(cliente.telefone);
+  if (!telefone) {
+    janela?.close();
+    alert('O cliente não possui telefone cadastrado para envio pelo WhatsApp.');
+    return;
+  }
+
+  const mensagem = encodeURIComponent(montarMensagemWhatsApp(osData, cliente));
+  const url = `https://wa.me/${telefone}?text=${mensagem}`;
+
+  if (janela && !janela.closed) {
+    janela.location.href = url;
+    return;
+  }
+
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function DadosOsForm() {
@@ -141,6 +205,7 @@ function DadosOsForm() {
       return;
     }
     setIsSubmitting(true);
+    const whatsappPopup = cliente.telefone ? window.open('about:blank', '_blank') : null;
     const formData = new FormData(e.currentTarget);
     const valorSeguroStr = formData.get('valor_seguro') as string;
     const valorSeguroTratado = valorSeguroStr ? parseFloat(valorSeguroStr.replace(',', '.')) : 0;
@@ -164,10 +229,13 @@ function DadosOsForm() {
     try {
       const { data, error } = await supabase.from('ordens_servico').insert([novaOS]).select().single();
       if (error) throw error;
-      gerarPdfOS(data as OSData, cliente);
+      const osCriada = data as OSData;
+      await gerarPdfOS(osCriada, cliente);
+      abrirWhatsAppOS(osCriada, cliente, whatsappPopup);
       alert(`Sucesso! O.S. Nº ${data.id} gerada com sucesso. A impressão será iniciada.`);
       router.push('/dashboard'); 
     } catch (error) {
+      whatsappPopup?.close();
       console.error("Erro ao salvar O.S.:", error);
       alert("Ocorreu um erro ao gravar a O.S. Verifique o console.");
     } finally {
@@ -177,6 +245,9 @@ function DadosOsForm() {
 
   return (
     <form onSubmit={handleSubmit} className="max-w-7xl mx-auto space-y-6 pb-12">
+      <datalist id="tipos-aparelho-os">
+        {TIPOS_APARELHO_OS.map((tipo) => <option key={tipo} value={tipo} />)}
+      </datalist>
       
       {/* BANNER DE GARANTIA (SÓ APARECE SE FOR RETORNO EM GARANTIA) */}
       {isGarantia && (
@@ -268,7 +339,7 @@ function DadosOsForm() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="col-span-1">
             <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Aparelho (Tipo) *</label>
-            <input name="aparelho_tipo" value={aparelhoTipo} onChange={(e)=>setAparelhoTipo(e.target.value)} type="text" placeholder="Ex: Smartphone, TV" className="w-full px-4 py-2.5 bg-[#f8fcff] border border-[#e0f1f7] rounded-xl text-[#0a6787] font-medium focus:ring-2 focus:ring-[#0a6787]/30" required />
+            <input name="aparelho_tipo" list="tipos-aparelho-os" value={aparelhoTipo} onChange={(e)=>setAparelhoTipo(e.target.value)} type="text" placeholder="Ex: Celular, TV, notebook..." className="w-full px-4 py-2.5 bg-[#f8fcff] border border-[#e0f1f7] rounded-xl text-[#0a6787] font-medium focus:ring-2 focus:ring-[#0a6787]/30" required />
           </div>
           <div className="col-span-1">
             <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Marca *</label>
@@ -362,43 +433,22 @@ function DadosOsForm() {
 // =========================================================================
 // FUNÇÃO QUE DESENHA E MANDA DIRETO PARA IMPRESSÃO 
 // =========================================================================
-function gerarPdfOS(osData: OSData, cliente: ClienteData) {
+async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
+  const brandImage = await getPdfBrandImage();
   const dataEntrada = new Date(osData.data_entrada);
   const dataFormatada = dataEntrada.toLocaleDateString('pt-BR');
   const horaFormatada = dataEntrada.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
   const buildVia = (tituloVia: string): Content[] => {
     return [
-      {
-        table: {
-          widths: ['*', 200],
-          body: [
-            [
-              {
-                text: [
-                  { text: '8K ELETRÔNICA\n', fontSize: 16, bold: true },
-                  { text: 'Av. Eng. Antonio de Goes, 340 Loja 01 Recife - PE\n', fontSize: 9 },
-                  { text: '(81) 3465-6042 / 98883-9428\n', fontSize: 9 },
-                  { text: 'contato@8keletronica.com.br\n', fontSize: 9 },
-                  { text: 'Chave PIX (CNPJ: 34.700.879/0001-04)', fontSize: 9 }
-                ],
-                border: [true, true, false, true],
-                margin: [5, 5, 0, 5]
-              },
-              {
-                text: [
-                  { text: `ORDEM DE SERVIÇO - ${tituloVia}\n`, fontSize: 10, bold: true, alignment: 'right', color: '#555' },
-                  { text: `Nº ${String(osData.id).padStart(5, '0')}\n\n`, fontSize: 18, bold: true, alignment: 'right', color: 'red' },
-                  { text: `DATA ENTRADA: ${dataFormatada} ${horaFormatada}`, alignment: 'right', fontSize: 10, bold: true }
-                ],
-                border: [false, true, true, true],
-                margin: [0, 5, 5, 5]
-              }
-            ]
-          ]
-        },
-        margin: [0, 0, 0, 10]
-      },
+      buildPdfHeader({
+        brandImage,
+        title: `ORDEM DE SERVIÇO - ${tituloVia}`,
+        rightLines: [
+          { text: `Nº ${String(osData.id).padStart(5, '0')}`, fontSize: 18, bold: true, color: '#d11a1a' },
+          { text: `DATA ENTRADA: ${dataFormatada} ${horaFormatada}`, fontSize: 10, bold: true },
+        ],
+      }),
       {
         table: {
           widths: ['*', '*', 120],

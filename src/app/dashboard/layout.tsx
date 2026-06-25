@@ -1,8 +1,9 @@
 "use client";
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 export default function DashboardLayout({
   children,
@@ -10,6 +11,19 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+
+  const navLinkClass = (href: string) => {
+    const isActive = pathname === href;
+    return `flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
+      isActive
+        ? 'bg-[#0a0a0a] text-white shadow-md'
+        : 'text-[#0a0a0a] hover:bg-white/55'
+    }`;
+  };
+
+  const navButtonClass = 'w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/55 transition-all text-[#0a0a0a] text-left';
+  const sectionClass = 'px-3 text-[10px] font-black text-[#0a0a0a] uppercase tracking-widest mb-2';
   
   // Estados para os Modais
   const [isAlterarModalOpen, setIsAlterarModalOpen] = useState(false);
@@ -145,62 +159,72 @@ export default function DashboardLayout({
       )}
 
       {/* Sidebar */}
-      <aside className="w-64 bg-[#0a6787] text-white flex flex-col p-6 space-y-8 shadow-xl">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-2xl font-black text-[#e0f7ff]">💎</div>
+      <aside className="w-64 bg-[#f4c400] text-[#0a0a0a] flex flex-col p-5 space-y-7 shadow-xl border-r border-[#d8a900]">
+        <div className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm border border-[#d8a900]/40">
+          <Image
+            src="/logo.png"
+            alt="Logo 8K Eletrônica"
+            width={52}
+            height={52}
+            className="h-12 w-12 rounded-full object-contain"
+            priority
+          />
           <div>
-            <h1 className="text-xl font-bold tracking-tight">8K Eletrônica</h1>
-            <p className="text-[10px] uppercase tracking-[2px] text-[#a3d8e8] font-semibold">Assistência Técnica</p>
+            <h1 className="text-lg font-black tracking-tight text-[#0a6787]">8K Eletrônica</h1>
+            <p className="text-[10px] uppercase tracking-[2px] text-[#6d6251] font-bold">Assistência Técnica</p>
           </div>
         </div>
 
         {/* Navegação Principal */}
         <nav className="flex-1 flex flex-col space-y-1">
-          <p className="px-3 text-[10px] font-bold text-[#a3d8e8]/50 uppercase tracking-widest mb-2">Painel Geral</p>
-          <Link href="/dashboard" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 transition-all text-[#e0f7ff]">
+          <p className={sectionClass}>Painel Geral</p>
+          <Link href="/dashboard" className={navLinkClass('/dashboard')}>
             <span className="text-lg">📊</span><span className="text-sm font-medium">Dashboard</span>
           </Link>
 
-          <p className="px-3 text-[10px] font-bold text-[#a3d8e8]/50 uppercase tracking-widest mt-6 mb-2">Gestão de O.S.</p>
-          <Link href="/dashboard/nova-os" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 transition-all text-[#e0f7ff]">
+          <p className={`${sectionClass} mt-6`}>Gestão de O.S.</p>
+          <Link href="/dashboard/nova-os" className={navLinkClass('/dashboard/nova-os')}>
             <span className="text-lg">✨</span><span className="text-sm">Nova O.S.</span>
           </Link>
           
-          <button onClick={() => setIsAlterarModalOpen(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 transition-all text-[#e0f7ff] text-left">
+          <button onClick={() => setIsAlterarModalOpen(true)} className={navButtonClass}>
             <span className="text-lg">📝</span><span className="text-sm">Alterar O.S.</span>
           </button>
 
-          <button onClick={() => setIsOrcamentoModalOpen(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-amber-500/20 text-amber-300 transition-all text-left">
+          <button onClick={() => setIsOrcamentoModalOpen(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-[#0a0a0a] hover:text-white text-[#0a0a0a] transition-all text-left">
             <span className="text-lg">💲</span><span className="text-sm font-bold">Gerar Orçamento</span>
           </button>
           
-          <button onClick={() => setIsEncerrarModalOpen(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-emerald-500/20 text-emerald-300 transition-all text-left">
+          <button onClick={() => setIsEncerrarModalOpen(true)} className={navButtonClass}>
             <span className="text-lg">🔒</span><span className="text-sm font-bold">Encerrar O.S.</span>
           </button>
 
           {/* NOVO BOTÃO DE REABRIR O.S. */}
-          <button onClick={() => setIsReabrirModalOpen(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-indigo-500/20 text-indigo-300 transition-all text-left">
+          <button onClick={() => setIsReabrirModalOpen(true)} className={navButtonClass}>
             <span className="text-lg">🔄</span><span className="text-sm font-bold">Reabrir O.S.</span>
           </button>
           
-          <Link href="/dashboard/localizar-os" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 transition-all text-[#e0f7ff]">
+          <Link href="/dashboard/localizar-os" className={navLinkClass('/dashboard/localizar-os')}>
             <span className="text-lg">🔍</span><span className="text-sm">Localizar O.S.</span>
           </Link>
-          <Link href="/dashboard/historico" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 transition-all text-[#e0f7ff]">
+          <Link href="/dashboard/localizar-clientes" className={navLinkClass('/dashboard/localizar-clientes')}>
+            <span className="text-lg">👥</span><span className="text-sm">Localizar Clientes</span>
+          </Link>
+          <Link href="/dashboard/historico" className={navLinkClass('/dashboard/historico')}>
             <span className="text-lg">📜</span><span className="text-sm">Histórico de O.S.</span>
           </Link>
 
-          <p className="px-3 text-[10px] font-bold text-[#a3d8e8]/50 uppercase tracking-widest mt-6 mb-2">Administrativo</p>
-          <Link href="/dashboard/financeiro" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 transition-all text-[#e0f7ff]">
+          <p className={`${sectionClass} mt-6`}>Administrativo</p>
+          <Link href="/dashboard/financeiro" className={navLinkClass('/dashboard/financeiro')}>
             <span className="text-lg">💰</span><span className="text-sm">Financeiro</span>
           </Link>
-          <Link href="/dashboard/estoque" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 transition-all text-[#e0f7ff]">
+          <Link href="/dashboard/estoque" className={navLinkClass('/dashboard/estoque')}>
             <span className="text-lg">📦</span><span className="text-sm">Estoque</span>
           </Link>
         </nav>
 
-        <div className="pt-4 border-t border-white/10">
-          <Link href="/" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-500/10 text-red-200 transition-all">
+        <div className="pt-4 border-t border-[#0a0a0a]/20">
+          <Link href="/" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-[#0a0a0a] hover:text-white text-[#0a0a0a] transition-all">
             <span className="text-lg">🚪</span><span className="text-sm font-medium">Sair do Sistema</span>
           </Link>
         </div>

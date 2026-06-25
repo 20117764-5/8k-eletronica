@@ -1,1 +1,151 @@
 @import "tailwindcss";
+
+:root {
+  --brand-black: #0a0a0a;
+  --brand-ink: #171717;
+  --brand-yellow: #f4c400;
+  --brand-yellow-dark: #d8a900;
+  --brand-cream: #fff8d8;
+  --brand-soft: #fffdf3;
+  --brand-border: #efe3a7;
+}
+
+html {
+  background: var(--brand-soft);
+}
+
+body {
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  letter-spacing: 0;
+}
+
+.rounded-3xl,
+.rounded-2xl,
+.rounded-xl {
+  border-radius: 8px !important;
+}
+
+.bg-\[\#0a6787\] {
+  background-color: var(--brand-black) !important;
+}
+
+.hover\:bg-\[\#08526c\]:hover,
+.hover\:bg-\[\#07536e\]:hover {
+  background-color: #242424 !important;
+}
+
+.text-\[\#0a6787\] {
+  color: var(--brand-black) !important;
+}
+
+.border-\[\#0a6787\] {
+  border-color: var(--brand-black) !important;
+}
+
+.ring-\[\#0a6787\] {
+  --tw-ring-color: var(--brand-black) !important;
+}
+
+.bg-\[\#38bdf8\] {
+  background-color: var(--brand-yellow) !important;
+}
+
+.text-\[\#38bdf8\] {
+  color: var(--brand-yellow-dark) !important;
+}
+
+.border-\[\#38bdf8\] {
+  border-color: var(--brand-yellow) !important;
+}
+
+.focus\:border-\[\#38bdf8\]:focus {
+  border-color: var(--brand-yellow) !important;
+}
+
+.bg-\[\#f0f9ff\],
+.bg-\[\#f8fcff\],
+.bg-\[\#e0f7ff\] {
+  background-color: var(--brand-cream) !important;
+}
+
+.text-\[\#73a8bd\],
+.text-\[\#a3d8e8\],
+.text-\[\#e0f7ff\] {
+  color: #6d6251 !important;
+}
+
+.border-\[\#e0f1f7\],
+.border-\[\#a3d8e8\] {
+  border-color: var(--brand-border) !important;
+}
+
+.divide-\[\#f0f9ff\] > :not(:last-child) {
+  border-color: #f4e8b3 !important;
+}
+
+.shadow-\[\#0a6787\]\/20,
+.shadow-\[\#0a6787\]\/30 {
+  --tw-shadow-color: rgb(10 10 10 / 0.22) !important;
+  --tw-shadow: var(--tw-shadow-colored) !important;
+}
+
+[class~="bg-[#0a6787]"] {
+  background-color: var(--brand-black) !important;
+}
+
+[class~="hover:bg-[#08526c]"]:hover,
+[class~="hover:bg-[#07536e]"]:hover {
+  background-color: #242424 !important;
+}
+
+[class~="text-[#0a6787]"] {
+  color: var(--brand-black) !important;
+}
+
+[class~="border-[#0a6787]"] {
+  border-color: var(--brand-black) !important;
+}
+
+[class~="bg-[#38bdf8]"] {
+  background-color: var(--brand-yellow) !important;
+}
+
+[class~="text-[#38bdf8]"] {
+  color: var(--brand-yellow-dark) !important;
+}
+
+[class~="border-[#38bdf8]"] {
+  border-color: var(--brand-yellow) !important;
+}
+
+[class~="focus:border-[#38bdf8]"]:focus {
+  border-color: var(--brand-yellow) !important;
+}
+
+[class~="bg-[#f0f9ff]"],
+[class~="bg-[#f8fcff]"],
+[class~="bg-[#e0f7ff]"] {
+  background-color: var(--brand-cream) !important;
+}
+
+[class~="text-[#73a8bd]"],
+[class~="text-[#a3d8e8]"] {
+  color: #6d6251 !important;
+}
+
+[class~="text-[#e0f7ff]"] {
+  color: #ffffff !important;
+}
+
+[class~="border-[#e0f1f7]"],
+[class~="border-[#a3d8e8]"] {
+  border-color: var(--brand-border) !important;
+}

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
+import { buildPdfHeader, getPdfBrandImage } from '@/lib/pdfBranding';
 
 // =========================================================================
 // IMPORTAÇÕES PARA GERAR O PDF (Para poderes reimprimir)
@@ -66,6 +67,21 @@ interface OSData {
   prioridade: string;
   status: string;
 }
+
+const TIPOS_APARELHO_OS = [
+  'TV',
+  'Som',
+  'Forno-microondas',
+  'Computador',
+  'Notebook',
+  'Celular',
+  'Tablet',
+  'Inversor solar',
+  'Monitor',
+  'Projetor',
+  'Videogame',
+  'Outro aparelho eletrônico',
+];
 
 // =========================================================================
 // COMPONENTE PRINCIPAL DO FORMULÁRIO DE EDIÇÃO
@@ -212,6 +228,9 @@ function AlterarOsForm() {
 
   return (
     <form onSubmit={handleAtualizar} className="max-w-7xl mx-auto space-y-6 pb-12">
+      <datalist id="tipos-aparelho-os">
+        {TIPOS_APARELHO_OS.map((tipo) => <option key={tipo} value={tipo} />)}
+      </datalist>
       
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#0a6787] p-6 rounded-3xl shadow-lg">
         <div className="flex items-center gap-4">
@@ -335,7 +354,7 @@ function AlterarOsForm() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="col-span-1">
             <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Aparelho (Tipo) *</label>
-            <input name="aparelho_tipo" defaultValue={osData.aparelho_tipo} type="text" className="w-full px-4 py-2.5 bg-[#f8fcff] border border-[#e0f1f7] rounded-xl text-[#0a6787] font-medium focus:ring-2 focus:ring-[#0a6787]/30" required />
+            <input name="aparelho_tipo" list="tipos-aparelho-os" defaultValue={osData.aparelho_tipo} type="text" className="w-full px-4 py-2.5 bg-[#f8fcff] border border-[#e0f1f7] rounded-xl text-[#0a6787] font-medium focus:ring-2 focus:ring-[#0a6787]/30" required />
           </div>
           <div className="col-span-1">
             <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Marca *</label>
@@ -405,7 +424,7 @@ function AlterarOsForm() {
             type="button" 
             onClick={() => {
               alert("Dica: Se alteraste dados do cliente ou aparelho, guarda as alterações primeiro para que elas saiam na impressão!");
-              gerarPdfOS(osData, cliente);
+              void gerarPdfOS(osData, cliente);
             }}
             className="px-6 py-3 bg-[#f0f9ff] text-[#0a6787] border border-[#a3d8e8] font-bold rounded-xl hover:bg-[#e0f7ff] transition-all text-sm flex items-center gap-2 mr-auto"
           >
@@ -433,43 +452,22 @@ function AlterarOsForm() {
 // =========================================================================
 // FUNÇÃO QUE DESENHA E MANDA DIRETO PARA IMPRESSÃO 
 // =========================================================================
-function gerarPdfOS(osData: OSData, cliente: ClienteData) {
+async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
+  const brandImage = await getPdfBrandImage();
   const dataEntrada = new Date(osData.data_entrada);
   const dataFormatada = dataEntrada.toLocaleDateString('pt-BR');
   const horaFormatada = dataEntrada.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
   const buildVia = (tituloVia: string): Content[] => {
     return [
-      {
-        table: {
-          widths: ['*', 200],
-          body: [
-            [
-              {
-                text: [
-                  { text: '8K ELETRÔNICA\n', fontSize: 16, bold: true },
-                  { text: 'Av. Eng. Antonio de Goes, 340 Loja 01 Recife - PE\n', fontSize: 9 },
-                  { text: '(81) 3465-6042 / 98883-9428\n', fontSize: 9 },
-                  { text: 'contato@8keletronica.com.br\n', fontSize: 9 },
-                  { text: 'Chave PIX (CNPJ: 34.700.879/0001-04)', fontSize: 9 }
-                ],
-                border: [true, true, false, true],
-                margin: [5, 5, 0, 5]
-              },
-              {
-                text: [
-                  { text: `ORDEM DE SERVIÇO - ${tituloVia}\n`, fontSize: 10, bold: true, alignment: 'right', color: '#555' },
-                  { text: `Nº ${String(osData.id).padStart(5, '0')}\n\n`, fontSize: 18, bold: true, alignment: 'right', color: 'red' },
-                  { text: `DATA ENTRADA: ${dataFormatada} ${horaFormatada}`, alignment: 'right', fontSize: 10, bold: true }
-                ],
-                border: [false, true, true, true],
-                margin: [0, 5, 5, 5]
-              }
-            ]
-          ]
-        },
-        margin: [0, 0, 0, 10]
-      },
+      buildPdfHeader({
+        brandImage,
+        title: `ORDEM DE SERVIÇO - ${tituloVia}`,
+        rightLines: [
+          { text: `Nº ${String(osData.id).padStart(5, '0')}`, fontSize: 18, bold: true, color: '#d11a1a' },
+          { text: `DATA ENTRADA: ${dataFormatada} ${horaFormatada}`, fontSize: 10, bold: true },
+        ],
+      }),
       {
         table: {
           widths: ['*', '*', 120],

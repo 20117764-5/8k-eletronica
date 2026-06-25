@@ -1,9 +1,9 @@
 "use client";
 
-import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
+import { buildPdfHeader, getPdfBrandImage } from '@/lib/pdfBranding';
 
 // PDFMake Configurações
 import * as pdfMakeModule from 'pdfmake/build/pdfmake';
@@ -132,13 +132,18 @@ function OrcamentoForm() {
   };
 
   // Funções de Gerar PDF (Laudo e Orçamento)
-  const imprimirLaudo = () => {
+  const imprimirLaudo = async () => {
     if(!osData || !cliente) return;
+    const brandImage = await getPdfBrandImage();
     const docDefinition: TDocumentDefinitions = {
       pageSize: 'A4', pageMargins: [40, 40, 40, 40],
       content: [
-        { text: '8K ELETRÔNICA', fontSize: 18, bold: true, alignment: 'center', margin: [0, 0, 0, 5] },
-        { text: 'LAUDO TÉCNICO', fontSize: 14, bold: true, alignment: 'center', color: '#0a6787', margin: [0, 0, 0, 20] },
+        buildPdfHeader({
+          brandImage,
+          title: 'LAUDO TÉCNICO',
+          accentColor: '#f4c400',
+          rightLines: [{ text: `O.S. Nº ${String(osData.id).padStart(5, '0')}`, fontSize: 14, bold: true, color: '#111111' }],
+        }),
         { text: `O.S. Nº: ${String(osData.id).padStart(5, '0')}`, bold: true, margin: [0, 0, 0, 10] },
         { text: `CLIENTE: ${cliente.nome_completo}`, margin: [0, 0, 0, 5] },
         { text: `APARELHO: ${osData.aparelho_tipo} | MARCA: ${osData.marca} | MODELO: ${osData.modelo || 'N/A'}`, margin: [0, 0, 0, 20] },
@@ -150,8 +155,9 @@ function OrcamentoForm() {
     pdfMake.createPdf(docDefinition).print();
   };
 
-  const imprimirOrcamento = () => {
+  const imprimirOrcamento = async () => {
     if(!osData || !cliente) return;
+    const brandImage = await getPdfBrandImage();
     
     const servicosBody = servicos.filter(s => s.descricao.trim() !== '').map(s => [s.descricao, `R$ ${Number(s.valor).toFixed(2)}`]);
     const pecasBody = pecas.filter(p => p.descricao.trim() !== '').map(p => [p.descricao, p.quantidade.toString(), `R$ ${Number(p.valor).toFixed(2)}`, `R$ ${(Number(p.quantidade) * Number(p.valor)).toFixed(2)}`]);
@@ -159,8 +165,15 @@ function OrcamentoForm() {
     const docDefinition: TDocumentDefinitions = {
       pageSize: 'A4', pageMargins: [30, 30, 30, 30],
       content: [
-        { text: '8K ELETRÔNICA', fontSize: 18, bold: true, alignment: 'center', margin: [0, 0, 0, 5] },
-        { text: 'FICHA DE ORÇAMENTO', fontSize: 14, bold: true, alignment: 'center', color: '#f59e0b', margin: [0, 0, 0, 20] },
+        buildPdfHeader({
+          brandImage,
+          title: 'FICHA DE ORÇAMENTO',
+          accentColor: '#f4c400',
+          rightLines: [
+            { text: `O.S. Nº ${String(osData.id).padStart(5, '0')}`, fontSize: 14, bold: true, color: '#111111' },
+            { text: `TOTAL: R$ ${totalGeral.toFixed(2)}`, fontSize: 10, bold: true, color: '#d8a900' },
+          ],
+        }),
         { text: `O.S. Nº: ${String(osData.id).padStart(5, '0')}`, bold: true, margin: [0, 0, 0, 10] },
         { text: `CLIENTE: ${cliente.nome_completo}`, margin: [0, 0, 0, 5] },
         { text: `APARELHO: ${osData.aparelho_tipo} | MARCA: ${osData.marca} | MODELO: ${osData.modelo || 'N/A'}`, margin: [0, 0, 0, 20] },

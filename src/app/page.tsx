@@ -1,5 +1,6 @@
 "use client";
 
+import Image from 'next/image';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -78,19 +79,20 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#f0f9ff] flex flex-col justify-center items-center p-4 relative overflow-hidden">
-      
-      {/* Elementos de fundo decorativos */}
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-[#38bdf8] rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-[#0a6787] rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
-
       <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-[#e0f1f7] p-8 relative z-10">
         
         {/* Cabeçalho */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-[#0a6787] rounded-2xl mx-auto flex items-center justify-center text-3xl font-black text-white shadow-lg mb-4 transform rotate-3">
-            💎
-          </div>
+          <Image
+            src="/logo.png"
+            alt="Logo 8K Eletrônica"
+            width={96}
+            height={96}
+            className="mx-auto mb-4 h-24 w-24 rounded-full object-contain"
+            priority
+          />
           <h1 className="text-2xl font-black text-[#0a6787] tracking-tight">8K Eletrônica</h1>
+          <p className="mt-1 text-[10px] font-black uppercase tracking-[2px] text-[#6d6251]">Assistência Técnica Especializada</p>
         </div>
 
         {errorMessage && (

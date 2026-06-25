@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, Suspense } from 'react';
+import { useCallback, useEffect, useState, Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
+import { buildPdfHeader, getPdfBrandImage } from '@/lib/pdfBranding';
 
 // PDFMake Configurações
 import * as pdfMakeModule from 'pdfmake/build/pdfmake';
@@ -59,11 +60,7 @@ function FinanceiroForm() {
   const mesAnterior = () => setMesAtual(new Date(mesAtual.getFullYear(), mesAtual.getMonth() - 1, 1));
   const proximoMes = () => setMesAtual(new Date(mesAtual.getFullYear(), mesAtual.getMonth() + 1, 1));
 
-  useEffect(() => {
-    fetchFinanceiro();
-  }, [mesAtual]);
-
-  async function fetchFinanceiro() {
+  const fetchFinanceiro = useCallback(async () => {
     setIsLoading(true);
     const primeiroDia = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), 1).toISOString();
     const ultimoDia = new Date(mesAtual.getFullYear(), mesAtual.getMonth() + 1, 0, 23, 59, 59).toISOString();
@@ -129,7 +126,11 @@ function FinanceiroForm() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [mesAtual]);
+
+  useEffect(() => {
+    fetchFinanceiro();
+  }, [fetchFinanceiro]);
 
   const handleSalvarDespesa = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,8 +179,9 @@ function FinanceiroForm() {
   // ==========================================
   // GERAR EXTRATO EM PDF
   // ==========================================
-  const imprimirExtrato = () => {
+  const imprimirExtrato = async () => {
     if (transacoes.length === 0) return alert("Não há transações para imprimir neste mês.");
+    const brandImage = await getPdfBrandImage();
 
     const tableBody = transacoes.map(t => [
       new Date(t.data).toLocaleDateString('pt-BR'),
@@ -193,8 +195,15 @@ function FinanceiroForm() {
       pageSize: 'A4', pageMargins: [30, 40, 30, 40],
       defaultStyle: { fontSize: 9 },
       content: [
-        { text: '8K ELETRÔNICA', fontSize: 18, bold: true, alignment: 'center', color: '#0a6787' },
-        { text: `EXTRATO FINANCEIRO - ${mesFormatado}`, fontSize: 12, bold: true, alignment: 'center', margin: [0, 5, 0, 20] },
+        buildPdfHeader({
+          brandImage,
+          title: `EXTRATO FINANCEIRO - ${mesFormatado}`,
+          rightLines: [
+            { text: `Receitas: R$ ${totalEntradas.toFixed(2)}`, bold: true, color: '#047857' },
+            { text: `Despesas: R$ ${totalSaidas.toFixed(2)}`, bold: true, color: '#b91c1c' },
+            { text: `Saldo: R$ ${saldoLiquido.toFixed(2)}`, bold: true, color: isPositivo ? '#111111' : '#b91c1c' },
+          ],
+        }),
         
         // Resumo
         {
