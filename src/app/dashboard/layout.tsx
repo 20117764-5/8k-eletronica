@@ -14,7 +14,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
 
   const navLinkClass = (href: string) => {
-    const isActive = pathname === href;
+    const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(`${href}/`));
     return `flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${
       isActive
         ? 'bg-[#0a0a0a] text-white shadow-md'
@@ -180,6 +180,9 @@ export default function DashboardLayout({
           <p className={sectionClass}>Painel Geral</p>
           <Link href="/dashboard" className={navLinkClass('/dashboard')}>
             <span className="text-lg">📊</span><span className="text-sm font-medium">Dashboard</span>
+          </Link>
+          <Link href="/dashboard/central-tecnico" className={navLinkClass('/dashboard/central-tecnico')}>
+            <span className="text-lg">🧰</span><span className="text-sm font-medium">Central do Técnico</span>
           </Link>
 
           <p className={`${sectionClass} mt-6`}>Gestão de O.S.</p>
