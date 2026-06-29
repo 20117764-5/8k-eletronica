@@ -1,7 +1,10 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { centralTecnicoTools, getCentralTecnicoTool } from '@/lib/centralTecnico';
+import ErrosComunsPage from './ErrosComunsPage';
+import GuiaAbreviacoesPage from './GuiaAbreviacoesPage';
 import ManualDoReparoPage from './ManualDoReparoPage';
+import TabelaPeliculasPage from './TabelaPeliculasPage';
 
 export function generateStaticParams() {
   return centralTecnicoTools.map((tool) => ({
@@ -23,6 +26,18 @@ export default async function CentralTecnicoFerramentaPage({
 
   if (tool.slug === 'manual-do-reparo') {
     return <ManualDoReparoPage />;
+  }
+
+  if (tool.slug === 'erros-comuns-na-bancada') {
+    return <ErrosComunsPage />;
+  }
+
+  if (tool.slug === 'guia-de-abreviacoes') {
+    return <GuiaAbreviacoesPage />;
+  }
+
+  if (tool.slug === 'tabela-de-peliculas') {
+    return <TabelaPeliculasPage />;
   }
 
   return (

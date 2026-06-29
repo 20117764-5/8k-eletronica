@@ -728,32 +728,32 @@ export default function ManualDoReparoPage() {
   }, [normalizedSearch]);
 
   return (
-    <section className="-m-10 min-h-screen bg-[#eef2f5] pb-12 text-[#24313f]">
-      <header className="sticky top-0 z-20 border-b border-[#0b3d7a]/30 bg-[#0f4f9e] px-6 py-5 shadow-md">
+    <section className="-m-10 min-h-screen bg-[#fffdf3] pb-12 text-[#171717]">
+      <header className="sticky top-0 z-20 border-b border-[#f4c400]/60 bg-[#0a0a0a] px-6 py-5 shadow-md">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3 text-white">
             <Link
               href="/dashboard/central-tecnico"
-              className="inline-flex h-10 w-10 items-center justify-center rounded bg-white/10 text-xl font-black transition-colors hover:bg-white/20"
+              className="inline-flex h-10 w-10 items-center justify-center rounded bg-[#f4c400] text-xl font-black text-[#0a0a0a] transition-colors hover:bg-[#ffd84a]"
               aria-label="Voltar para a Central do Técnico"
             >
               ←
             </Link>
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.24em] text-white/70">Central do Técnico</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#f4c400]">Central do Técnico</p>
               <h1 className="text-2xl font-black tracking-tight">Guia de Reparo</h1>
             </div>
           </div>
 
           <label className="relative block w-full max-w-xl">
             <span className="sr-only">Buscar defeito, sintoma ou capítulo</span>
-            <svg className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#64748b]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <svg className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#6d6251]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="m21 21-4.35-4.35M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
             <input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              className="h-12 w-full rounded border-0 bg-white py-3 pl-12 pr-4 text-sm font-semibold text-[#0f172a] shadow-sm outline-none ring-2 ring-transparent transition-all placeholder:text-[#64748b] focus:ring-[#f4c400]"
+              className="h-12 w-full rounded border border-[#efe3a7] bg-white py-3 pl-12 pr-4 text-sm font-semibold text-[#171717] shadow-sm outline-none ring-2 ring-transparent transition-all placeholder:text-[#6d6251] focus:ring-[#f4c400]"
               placeholder="Buscar defeito, sintoma ou capítulo"
             />
           </label>
@@ -762,19 +762,19 @@ export default function ManualDoReparoPage() {
 
       <main className="mx-auto max-w-5xl px-5 py-10">
         <section className="text-center">
-          <h2 className="text-3xl font-black uppercase tracking-wide text-[#0f4f9e]">Página de Decisão Rápida</h2>
-          <p className="mx-auto mt-5 max-w-3xl text-base font-medium leading-7 text-[#475569]">
+          <h2 className="text-3xl font-black uppercase tracking-wide text-[#0a0a0a]">Página de Decisão Rápida</h2>
+          <p className="mx-auto mt-5 max-w-3xl text-base font-medium leading-7 text-[#6d6251]">
             Use esta página quando o aparelho chegar na bancada. Leia o comportamento, encontre o sintoma mais próximo e avance para os capítulos indicados.
           </p>
-          <p className="mt-2 text-lg font-black text-[#334155]">Diagnóstico é método. Tentativa é prejuízo.</p>
+          <p className="mt-2 text-lg font-black text-[#171717]">Diagnóstico é método. Tentativa é prejuízo.</p>
         </section>
 
         <section className="mt-8 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
           {filteredDecisions.map((decision) => (
-            <article key={decision.title} className="flex min-h-[164px] flex-col justify-between border border-[#d8dee6] bg-white p-5 shadow-sm">
+            <article key={decision.title} className="flex min-h-[164px] flex-col justify-between border border-[#efe3a7] bg-white p-5 shadow-sm transition-all hover:border-[#f4c400] hover:shadow-md">
               <div>
-                <h3 className="text-lg font-black leading-7 text-[#1785df]">{decision.title}</h3>
-                <p className="mt-3 text-sm leading-6 text-[#475569]">
+                <h3 className="text-lg font-black leading-7 text-[#0a0a0a]">{decision.title}</h3>
+                <p className="mt-3 text-sm leading-6 text-[#6d6251]">
                   <strong>Sintomas:</strong> {decision.signal.replace(/^Na fonte: /, '').replace(/^Sintomas: /, '')}
                 </p>
               </div>
@@ -783,21 +783,21 @@ export default function ManualDoReparoPage() {
                   <a
                     key={`${decision.title}-${chapter}`}
                     href={`#cap-${chapter}`}
-                    className="inline-flex items-center rounded bg-[#e3f2ff] px-3 py-2 text-sm font-black text-[#1785df] transition-colors hover:bg-[#cfe9ff]"
+                    className="inline-flex items-center rounded border border-[#f4c400]/50 bg-[#fff8d8] px-3 py-2 text-sm font-black text-[#0a0a0a] transition-colors hover:bg-[#f4c400]"
                   >
                     Cap. {chapter}
                   </a>
                 ))}
               </div>
-              <p className="mt-3 rounded bg-[#e3f2ff] px-3 py-2 text-sm font-black text-[#1785df]">{chapterLabel(decision.chapters)}</p>
+              <p className="mt-3 rounded border border-[#f4c400]/50 bg-[#fff8d8] px-3 py-2 text-sm font-black text-[#0a0a0a]">{chapterLabel(decision.chapters)}</p>
             </article>
           ))}
         </section>
 
         {filteredChapters.length === 0 ? (
-          <div className="mt-10 border border-[#d8dee6] bg-white p-8 text-center shadow-sm">
-            <h3 className="text-xl font-black text-[#0f4f9e]">Nenhum resultado encontrado</h3>
-            <p className="mt-2 text-sm font-medium text-[#64748b]">Tente buscar por consumo, bateria, carga, tela, rede, boot ou curto.</p>
+          <div className="mt-10 border border-[#efe3a7] bg-white p-8 text-center shadow-sm">
+            <h3 className="text-xl font-black text-[#0a0a0a]">Nenhum resultado encontrado</h3>
+            <p className="mt-2 text-sm font-medium text-[#6d6251]">Tente buscar por consumo, bateria, carga, tela, rede, boot ou curto.</p>
           </div>
         ) : (
           <section className="mt-10 space-y-8">
@@ -805,36 +805,36 @@ export default function ManualDoReparoPage() {
               <article
                 key={chapter.id}
                 id={`cap-${chapter.id}`}
-                className="scroll-mt-28 overflow-hidden border border-[#d8dee6] border-t-4 border-t-[#1785df] bg-white shadow-sm"
+                className="scroll-mt-28 overflow-hidden border border-[#efe3a7] border-t-4 border-t-[#f4c400] bg-white shadow-sm"
               >
                 <div className="p-6 sm:p-8">
-                  <h2 className="text-2xl font-black leading-tight text-[#0f4f9e] sm:text-3xl">
+                  <h2 className="text-2xl font-black leading-tight text-[#0a0a0a] sm:text-3xl">
                     Cap. {chapter.id} - {chapter.title}
                   </h2>
-                  <p className="mt-4 border-b border-[#e5e7eb] pb-5 text-base font-medium leading-7 text-[#475569]">
+                  <p className="mt-4 border-b border-[#efe3a7] pb-5 text-base font-medium leading-7 text-[#6d6251]">
                     {chapter.summary}
                   </p>
 
                   <div className="mt-6 space-y-5">
                     {chapter.sections.map((section) => (
-                      <details key={section.heading} className="group overflow-hidden border border-[#d8dee6] bg-white">
-                        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 bg-[#e3f2ff] px-5 py-4 text-lg font-black text-[#1785df] transition-colors hover:bg-[#cfe9ff] [&::-webkit-details-marker]:hidden">
+                      <details key={section.heading} className="group overflow-hidden border border-[#efe3a7] bg-white">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 bg-[#fff8d8] px-5 py-4 text-lg font-black text-[#0a0a0a] transition-colors hover:bg-[#f4c400]/25 [&::-webkit-details-marker]:hidden">
                           <span>{section.heading}</span>
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-white text-base shadow-sm transition-transform group-open:rotate-180" aria-hidden="true">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-[#0a0a0a] text-base text-[#f4c400] shadow-sm transition-transform group-open:rotate-180" aria-hidden="true">
                             ↓
                           </span>
                         </summary>
-                        <div className="border-t border-[#d8dee6] px-5 py-5">
-                          <ul className="space-y-3 text-sm font-medium leading-6 text-[#334155]">
+                        <div className="border-t border-[#efe3a7] px-5 py-5">
+                          <ul className="space-y-3 text-sm font-medium leading-6 text-[#171717]">
                             {section.items.map((item) => (
                               <li key={item} className="flex gap-3">
-                                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1785df]" aria-hidden="true" />
+                                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#f4c400]" aria-hidden="true" />
                                 <span>{item}</span>
                               </li>
                             ))}
                           </ul>
                           {section.note && (
-                            <p className="mt-5 border-l-4 border-[#f4c400] bg-[#fff8d8] px-4 py-3 text-sm font-bold italic leading-6 text-[#334155]">
+                            <p className="mt-5 border-l-4 border-[#f4c400] bg-[#fff8d8] px-4 py-3 text-sm font-bold italic leading-6 text-[#171717]">
                               {section.note}
                             </p>
                           )}
