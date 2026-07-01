@@ -2,8 +2,10 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { centralTecnicoTools, getCentralTecnicoTool } from '@/lib/centralTecnico';
 import ErrosComunsPage from './ErrosComunsPage';
+import EsquemasEletricosPage from './EsquemasEletricosPage';
 import GuiaAbreviacoesPage from './GuiaAbreviacoesPage';
 import ManualDoReparoPage from './ManualDoReparoPage';
+import OrdemServicoPage from './OrdemServicoPage';
 import TabelaPeliculasPage from './TabelaPeliculasPage';
 
 export function generateStaticParams() {
@@ -36,8 +38,16 @@ export default async function CentralTecnicoFerramentaPage({
     return <GuiaAbreviacoesPage />;
   }
 
+  if (tool.slug === 'ordem-de-servico') {
+    return <OrdemServicoPage />;
+  }
+
   if (tool.slug === 'tabela-de-peliculas') {
     return <TabelaPeliculasPage />;
+  }
+
+  if (tool.slug === 'esquemas-eletricos') {
+    return <EsquemasEletricosPage />;
   }
 
   return (
