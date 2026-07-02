@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
-import { buildPdfHeader, getPdfBrandImage } from '@/lib/pdfBranding';
+import { buildPdfHeader, getPdfBrandImage, getPdfCellAvariasImage } from '@/lib/pdfBranding';
 
 // =========================================================================
 // IMPORTAÇÕES PARA GERAR O PDF (Para poderes reimprimir)
@@ -37,6 +37,40 @@ const pdfFonts = (pdfFontsImport.default || pdfFontsImport) as PdfFontsType;
 
 if (pdfMake && !pdfMake.vfs) {
   pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : (pdfFonts.vfs || {});
+}
+
+const DADOS_CELULAR_MARKER = '[DADOS DO CELULAR]';
+
+function separarObservacoesCelular(observacoes?: string | null) {
+  const texto = observacoes || '';
+  const index = texto.indexOf(DADOS_CELULAR_MARKER);
+
+  if (index < 0) {
+    return {
+      observacoesGerais: texto.trim(),
+      dadosCelular: '',
+    };
+  }
+
+  return {
+    observacoesGerais: texto.slice(0, index).trim(),
+    dadosCelular: texto.slice(index).replace(DADOS_CELULAR_MARKER, '').trim(),
+  };
+}
+
+function normalizarTextoBase(valor: string) {
+  return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function isTipoCelular(tipo: string) {
+  const texto = normalizarTextoBase(tipo);
+  return texto.includes('celular') || texto.includes('smartphone') || texto.includes('iphone');
+}
+
+function dataLocalParaIso(valor: string) {
+  if (!valor) return valor;
+  const data = new Date(valor);
+  return Number.isNaN(data.getTime()) ? valor : data.toISOString();
 }
 
 // =========================================================================
@@ -169,8 +203,11 @@ function AlterarOsForm() {
     const valorSeguroStr = formData.get('valor_seguro') as string;
     const valorSeguroTratado = valorSeguroStr ? parseFloat(valorSeguroStr.replace(',', '.')) : 0;
 
+    const dataEntradaForm = formData.get('data_entrada');
+    const dataEntradaLocal = typeof dataEntradaForm === 'string' ? dataEntradaForm.trim() : '';
+
     const osAtualizada = {
-      data_entrada: formData.get('data_entrada'),
+      data_entrada: dataLocalParaIso(dataEntradaLocal),
       aparelho_tipo: formData.get('aparelho_tipo'),
       marca: formData.get('marca'),
       modelo: formData.get('modelo'),
@@ -457,15 +494,19 @@ async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
   const dataEntrada = new Date(osData.data_entrada);
   const dataFormatada = dataEntrada.toLocaleDateString('pt-BR');
   const horaFormatada = dataEntrada.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const observacoesSeparadas = separarObservacoesCelular(osData.observacoes);
+  const isOsCelular = isTipoCelular(osData.aparelho_tipo) || Boolean(observacoesSeparadas.dadosCelular);
+  const avariasCelularImage = isOsCelular ? await getPdfCellAvariasImage() : null;
 
   const buildVia = (tituloVia: string): Content[] => {
     return [
       buildPdfHeader({
         brandImage,
         title: `ORDEM DE SERVIÇO - ${tituloVia}`,
+        compact: isOsCelular,
         rightLines: [
-          { text: `Nº ${String(osData.id).padStart(5, '0')}`, fontSize: 18, bold: true, color: '#d11a1a' },
-          { text: `DATA ENTRADA: ${dataFormatada} ${horaFormatada}`, fontSize: 10, bold: true },
+          { text: `Nº ${String(osData.id).padStart(5, '0')}`, fontSize: isOsCelular ? 16 : 18, bold: true, color: '#d11a1a' },
+          { text: `DATA ENTRADA: ${dataFormatada} ${horaFormatada}`, fontSize: isOsCelular ? 8.5 : 10, bold: true },
         ],
       }),
       {
@@ -489,7 +530,7 @@ async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
             ]
           ]
         },
-        margin: [0, 0, 0, 10]
+        margin: isOsCelular ? [0, 0, 0, 4] : [0, 0, 0, 10]
       },
       {
         table: {
@@ -508,7 +549,7 @@ async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
             [
               { text: `ACESSÓRIOS:\n${osData.acessorios_deixados || 'Nenhum'}`, colSpan: 2, margin: [0, 2, 0, 5] },
               {},
-              { text: `OBSERVAÇÕES:\n${osData.observacoes || ''}`, colSpan: 2, margin: [0, 2, 0, 5] },
+              { text: `OBSERVAÇÕES:\n${observacoesSeparadas.observacoesGerais || ''}`, colSpan: 2, margin: [0, 2, 0, 5] },
               {}
             ],
             [
@@ -517,13 +558,23 @@ async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
             ]
           ]
         },
-        margin: [0, 0, 0, 10]
+        margin: isOsCelular ? [0, 0, 0, 4] : [0, 0, 0, 10]
       },
+      ...(observacoesSeparadas.dadosCelular ? ([{
+        table: {
+          widths: ['*'],
+          body: [
+            [{ text: 'DADOS ESPECÍFICOS DO CELULAR', bold: true, color: '#0a0a0a', fillColor: '#f4c400' }],
+            [{ text: observacoesSeparadas.dadosCelular, fontSize: isOsCelular ? 6.7 : 7, lineHeight: isOsCelular ? 1.08 : 1.1 }]
+          ]
+        },
+        margin: isOsCelular ? [0, 0, 0, 4] : [0, 0, 0, 10]
+      }] as Content[]) : []),
       {
         text: 'TERMOS E CONDIÇÕES DA ASSISTÊNCIA',
         bold: true,
-        fontSize: 8,
-        margin: [0, 0, 0, 2]
+        fontSize: isOsCelular ? 7.4 : 8,
+        margin: [0, 0, 0, isOsCelular ? 2 : 2]
       },
       {
         text: [
@@ -535,9 +586,9 @@ async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
           '6 - Informações sobre a O.S. serão fornecidas por meio do seu nº ou pelas confirmações dos dados fornecidos pelo cliente.\n',
           '7 - Deverá ser retirado o aparelho desta O.S, no prazo máximo de 90 dias após notificação, sob pena de venda para ressarcimento.'
         ],
-        fontSize: 7,
+        fontSize: isOsCelular ? 6.15 : 7,
         alignment: 'justify',
-        margin: [0, 0, 0, 15] 
+        margin: isOsCelular ? [0, 0, 0, 7] : [0, 0, 0, 15] 
       },
       {
         columns: [
@@ -545,27 +596,60 @@ async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
             width: '*',
             text: '____________________________________________________\nASSINATURA DO CLIENTE',
             alignment: 'center',
-            fontSize: 8
+            fontSize: isOsCelular ? 7.5 : 8
           },
           {
             width: '*',
             text: '____________________________________________________\n8K ELETRÔNICA - RECEPÇÃO',
             alignment: 'center',
-            fontSize: 8
+            fontSize: isOsCelular ? 7.5 : 8
           }
         ]
       }
     ];
   };
 
+  const folhaAvariasCelular: Content[] = isOsCelular
+    ? ([
+        avariasCelularImage
+          ? {
+              image: avariasCelularImage,
+              fit: [760, 520],
+              alignment: 'center',
+              pageBreak: 'before',
+              pageOrientation: 'landscape',
+              margin: [0, 30, 0, 0],
+            }
+          : {
+              text: 'Folha de avarias visíveis do celular não encontrada.',
+              pageBreak: 'before',
+              alignment: 'center',
+              margin: [0, 260, 0, 0],
+            },
+      ] as Content[])
+    : [];
+
   const docDefinition: TDocumentDefinitions = {
     pageSize: 'A4',
-    pageMargins: [20, 15, 20, 15], 
+    pageMargins: isOsCelular ? [15, 8, 15, 8] : [20, 15, 20, 15], 
     defaultStyle: {
-      fontSize: 9,
+      fontSize: isOsCelular ? 8.25 : 9,
       color: '#333'
     },
-    content: [
+    content: isOsCelular
+      ? [
+          ...buildVia('VIA DO CLIENTE (REIMPRESSÃO)'),
+          {
+            text: '- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - CORTE AQUI - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -',
+            alignment: 'center',
+            color: '#999',
+            fontSize: 6,
+            margin: [0, 7, 0, 7]
+          },
+          ...buildVia('VIA DA LOJA (REIMPRESSÃO)'),
+          ...folhaAvariasCelular,
+        ]
+      : [
       ...buildVia('VIA DO CLIENTE (REIMPRESSÃO)'),
       {
         text: '- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - CORTE AQUI - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -',

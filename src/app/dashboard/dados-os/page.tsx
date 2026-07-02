@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
 import { supabase } from '@/lib/supabase'; 
-import { buildPdfHeader, getPdfBrandImage } from '@/lib/pdfBranding';
+import { buildPdfHeader, getPdfBrandImage, getPdfCellAvariasImage } from '@/lib/pdfBranding';
 
 // Importações para gerar o PDF
 import * as pdfMakeModule from 'pdfmake/build/pdfmake';
@@ -77,6 +77,123 @@ const TIPOS_APARELHO_OS = [
   'Outro aparelho eletrônico',
 ];
 
+const DADOS_CELULAR_MARKER = '[DADOS DO CELULAR]';
+
+const SINTOMAS_CELULAR = [
+  'Não liga',
+  'Em loop',
+  'Sem NF',
+  'Tela quebrada',
+  'Sem chip',
+  'Sem áudio',
+  'Touch não funciona',
+  'Microfone com defeito',
+  'Entrada de fone com defeito',
+  'Sem botão(ões)',
+  'Não carrega',
+  'Sem tampa',
+  'Bateria inchada',
+  'Câmera quebrada',
+  'Sem nota fiscal',
+];
+
+const AVARIAS_CELULAR = [
+  'Tela frontal',
+  'Tampa traseira',
+  'Laterais',
+  'Botões',
+  'Conector de carga',
+  'Câmeras',
+  'Chassi / carcaça',
+  'Película / vidro',
+  'Marcas de queda',
+  'Oxidação aparente',
+];
+
+function normalizarTextoBase(valor: string) {
+  return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function isTipoCelular(tipo: string) {
+  const texto = normalizarTextoBase(tipo);
+  return texto.includes('celular') || texto.includes('smartphone') || texto.includes('iphone');
+}
+
+function getFormString(formData: FormData, campo: string) {
+  const valor = formData.get(campo);
+  return typeof valor === 'string' ? valor.trim() : '';
+}
+
+function getFormList(formData: FormData, campo: string) {
+  return formData
+    .getAll(campo)
+    .filter((valor): valor is string => typeof valor === 'string')
+    .map((valor) => valor.trim())
+    .filter(Boolean);
+}
+
+function formatarDataCampo(valor: string) {
+  const [ano, mes, dia] = valor.split('-');
+  return ano && mes && dia ? `${dia}/${mes}/${ano}` : valor;
+}
+
+function dataLocalParaIso(valor: string) {
+  if (!valor) return valor;
+  const data = new Date(valor);
+  return Number.isNaN(data.getTime()) ? valor : data.toISOString();
+}
+
+function removerBlocoDadosCelular(observacoes: string) {
+  const index = observacoes.indexOf(DADOS_CELULAR_MARKER);
+  return index >= 0 ? observacoes.slice(0, index).trim() : observacoes.trim();
+}
+
+function separarObservacoesCelular(observacoes?: string | null) {
+  const texto = observacoes || '';
+  const index = texto.indexOf(DADOS_CELULAR_MARKER);
+
+  if (index < 0) {
+    return {
+      observacoesGerais: texto.trim(),
+      dadosCelular: '',
+    };
+  }
+
+  return {
+    observacoesGerais: texto.slice(0, index).trim(),
+    dadosCelular: texto.slice(index).replace(DADOS_CELULAR_MARKER, '').trim(),
+  };
+}
+
+function montarObservacoesComDadosCelular(observacoes: string, formData: FormData) {
+  const sintomas = getFormList(formData, 'celular_sintomas');
+  const avarias = getFormList(formData, 'celular_avarias');
+  const senha = getFormString(formData, 'celular_senha');
+  const chip = getFormString(formData, 'celular_chip');
+  const bateria = getFormString(formData, 'celular_bateria');
+  const previsaoOrcamento = getFormString(formData, 'celular_previsao_orcamento');
+  const previsaoEntrega = getFormString(formData, 'celular_previsao_entrega');
+  const total = getFormString(formData, 'celular_total');
+  const garantia = getFormString(formData, 'celular_garantia');
+  const observacaoCelular = getFormString(formData, 'celular_observacoes');
+
+  const bloco = [
+    DADOS_CELULAR_MARKER,
+    `Relatos marcados: ${sintomas.length ? sintomas.join(', ') : 'Nenhum'}`,
+    `Avarias visíveis: ${avarias.length ? avarias.join(', ') : 'Nenhuma'}`,
+    senha ? `Senha/padrão informado: ${senha}` : '',
+    chip ? `Chip/operadora: ${chip}` : '',
+    bateria ? `Bateria na entrada: ${bateria}` : '',
+    previsaoOrcamento ? `Data prevista para orçamento: ${formatarDataCampo(previsaoOrcamento)}` : '',
+    previsaoEntrega ? `Data prevista para entrega: ${formatarDataCampo(previsaoEntrega)}` : '',
+    total ? `Total previsto: R$ ${total}` : '',
+    garantia ? `Garantia informada: ${garantia}` : '',
+    observacaoCelular ? `Observações do celular: ${observacaoCelular}` : '',
+  ].filter(Boolean).join('\n');
+
+  return [removerBlocoDadosCelular(observacoes), bloco].filter(Boolean).join('\n\n');
+}
+
 function normalizarTelefoneWhatsApp(telefone: string | null) {
   const digitos = (telefone || '').replace(/\D/g, '');
   if (!digitos) return null;
@@ -145,6 +262,7 @@ function DadosOsForm() {
   const [modelo, setModelo] = useState('');
   const [serial, setSerial] = useState('');
   const [observacoes, setObservacoes] = useState(''); // NOVO ESTADO PARA AS OBSERVAÇÕES
+  const [modoCelular, setModoCelular] = useState(false);
 
   // Busca o próximo número da O.S.
   useEffect(() => {
@@ -186,6 +304,7 @@ function DadosOsForm() {
           setMarca(osAntiga.marca || '');
           setModelo(osAntiga.modelo || '');
           setSerial(osAntiga.serial_imei || '');
+          setModoCelular(isTipoCelular(osAntiga.aparelho_tipo || ''));
 
           // SE FOR GARANTIA, PREENCHE AS OBSERVAÇÕES AUTOMATICAMENTE
           if (isGarantia) {
@@ -198,6 +317,21 @@ function DadosOsForm() {
     fetchDados();
   }, [clienteId, clonarOsId, isGarantia]);
 
+  function selecionarOsConvencional() {
+    setModoCelular(false);
+    setAparelhoTipo((valorAtual) => (isTipoCelular(valorAtual) ? '' : valorAtual));
+  }
+
+  function selecionarOsCelular() {
+    setModoCelular(true);
+    setAparelhoTipo((valorAtual) => valorAtual.trim() || 'Celular');
+  }
+
+  function handleAparelhoTipoChange(valor: string) {
+    setAparelhoTipo(valor);
+    setModoCelular(isTipoCelular(valor));
+  }
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!cliente) {
@@ -209,18 +343,24 @@ function DadosOsForm() {
     const formData = new FormData(e.currentTarget);
     const valorSeguroStr = formData.get('valor_seguro') as string;
     const valorSeguroTratado = valorSeguroStr ? parseFloat(valorSeguroStr.replace(',', '.')) : 0;
+    const tipoAparelho = getFormString(formData, 'aparelho_tipo');
+    const dataEntradaLocal = getFormString(formData, 'data_entrada');
+    const observacoesFormulario = getFormString(formData, 'observacoes');
+    const observacoesTratadas = modoCelular || isTipoCelular(tipoAparelho)
+      ? montarObservacoesComDadosCelular(observacoesFormulario, formData)
+      : removerBlocoDadosCelular(observacoesFormulario);
 
     const novaOS = {
       cliente_id: cliente.id,
-      data_entrada: formData.get('data_entrada'),
-      aparelho_tipo: formData.get('aparelho_tipo'),
+      data_entrada: dataLocalParaIso(dataEntradaLocal),
+      aparelho_tipo: tipoAparelho,
       marca: formData.get('marca'),
       modelo: formData.get('modelo'),
       serial_imei: formData.get('serial_imei'),
       valor_seguro: valorSeguroTratado,
       defeito_reclamacao: formData.get('defeito_reclamacao'),
       acessorios_deixados: formData.get('acessorios_deixados'),
-      observacoes: formData.get('observacoes'),
+      observacoes: observacoesTratadas,
       tecnico_resp: formData.get('tecnico_resp'),
       prioridade: formData.get('prioridade'),
       status: 'Aguardando avaliação do técnico'
@@ -335,11 +475,27 @@ function DadosOsForm() {
       </div>
 
       <div className="bg-white p-8 rounded-b-3xl rounded-tr-3xl shadow-sm border border-[#e0f1f7] -mt-2 space-y-6">
+        <div className="grid grid-cols-1 gap-3 rounded-2xl border border-[#f4c400]/40 bg-[#fff8d8] p-4 md:grid-cols-2">
+          <button
+            type="button"
+            onClick={selecionarOsConvencional}
+            className={`rounded-xl border px-5 py-3 text-sm font-black transition-all ${!modoCelular ? 'border-[#0a0a0a] bg-[#0a0a0a] text-[#f4c400]' : 'border-[#e6d58a] bg-white text-[#0a0a0a] hover:border-[#0a0a0a]'}`}
+          >
+            OS convencional
+          </button>
+          <button
+            type="button"
+            onClick={selecionarOsCelular}
+            className={`rounded-xl border px-5 py-3 text-sm font-black transition-all ${modoCelular ? 'border-[#0a0a0a] bg-[#f4c400] text-[#0a0a0a]' : 'border-[#e6d58a] bg-white text-[#0a0a0a] hover:border-[#f4c400]'}`}
+          >
+            OS para celular
+          </button>
+        </div>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="col-span-1">
             <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Aparelho (Tipo) *</label>
-            <input name="aparelho_tipo" list="tipos-aparelho-os" value={aparelhoTipo} onChange={(e)=>setAparelhoTipo(e.target.value)} type="text" placeholder="Ex: Celular, TV, notebook..." className="w-full px-4 py-2.5 bg-[#f8fcff] border border-[#e0f1f7] rounded-xl text-[#0a6787] font-medium focus:ring-2 focus:ring-[#0a6787]/30" required />
+            <input name="aparelho_tipo" list="tipos-aparelho-os" value={aparelhoTipo} onChange={(e)=>handleAparelhoTipoChange(e.target.value)} type="text" placeholder="Ex: Celular, TV, notebook..." className="w-full px-4 py-2.5 bg-[#f8fcff] border border-[#e0f1f7] rounded-xl text-[#0a6787] font-medium focus:ring-2 focus:ring-[#0a6787]/30" required />
           </div>
           <div className="col-span-1">
             <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Marca *</label>
@@ -364,6 +520,78 @@ function DadosOsForm() {
             </div>
           </div>
         </div>
+
+        {modoCelular && (
+          <section className="space-y-5 rounded-2xl border-2 border-[#f4c400] bg-[#fffdf3] p-5">
+            <div className="flex flex-col gap-1 border-b border-[#f4c400]/40 pb-3">
+              <h3 className="text-sm font-black uppercase tracking-wide text-[#0a0a0a]">Dados do aparelho celular</h3>
+              <p className="text-xs font-bold text-[#6d6251]">Checklist específico para celulares, conforme a ficha de entrada.</p>
+            </div>
+
+            <div>
+              <span className="mb-3 block text-xs font-black uppercase text-[#0a0a0a]">Relato / condição de entrada</span>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {SINTOMAS_CELULAR.map((item) => (
+                  <label key={item} className="flex min-h-11 items-center gap-3 rounded-xl border border-[#efe3a7] bg-white px-3 py-2 text-sm font-bold text-[#171717]">
+                    <input type="checkbox" name="celular_sintomas" value={item} className="h-4 w-4 accent-[#f4c400]" />
+                    {item}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <span className="mb-3 block text-xs font-black uppercase text-[#0a0a0a]">Avarias visíveis</span>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                {AVARIAS_CELULAR.map((item) => (
+                  <label key={item} className="flex min-h-11 items-center gap-3 rounded-xl border border-[#efe3a7] bg-white px-3 py-2 text-sm font-bold text-[#171717]">
+                    <input type="checkbox" name="celular_avarias" value={item} className="h-4 w-4 accent-[#f4c400]" />
+                    {item}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label className="block text-xs font-bold text-[#6d6251] uppercase mb-1">Senha / padrão</label>
+                <input name="celular_senha" type="text" placeholder="Ex: 1234 ou padrão autorizado" className="w-full rounded-xl border border-[#efe3a7] bg-white px-4 py-2.5 text-[#171717] font-medium focus:ring-2 focus:ring-[#f4c400]/40" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#6d6251] uppercase mb-1">Chip / operadora</label>
+                <input name="celular_chip" type="text" placeholder="Ex: sem chip, Claro, Vivo..." className="w-full rounded-xl border border-[#efe3a7] bg-white px-4 py-2.5 text-[#171717] font-medium focus:ring-2 focus:ring-[#f4c400]/40" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#6d6251] uppercase mb-1">Bateria na entrada</label>
+                <input name="celular_bateria" type="text" placeholder="Ex: 35%, inchada, descarregada" className="w-full rounded-xl border border-[#efe3a7] bg-white px-4 py-2.5 text-[#171717] font-medium focus:ring-2 focus:ring-[#f4c400]/40" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <div>
+                <label className="block text-xs font-bold text-[#6d6251] uppercase mb-1">Previsão orçamento</label>
+                <input name="celular_previsao_orcamento" type="date" className="w-full rounded-xl border border-[#efe3a7] bg-white px-4 py-2.5 text-[#171717] font-medium focus:ring-2 focus:ring-[#f4c400]/40" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#6d6251] uppercase mb-1">Previsão entrega</label>
+                <input name="celular_previsao_entrega" type="date" className="w-full rounded-xl border border-[#efe3a7] bg-white px-4 py-2.5 text-[#171717] font-medium focus:ring-2 focus:ring-[#f4c400]/40" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#6d6251] uppercase mb-1">Total previsto</label>
+                <input name="celular_total" type="text" placeholder="0,00" className="w-full rounded-xl border border-[#efe3a7] bg-white px-4 py-2.5 text-[#171717] font-medium focus:ring-2 focus:ring-[#f4c400]/40" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#6d6251] uppercase mb-1">Garantia</label>
+                <input name="celular_garantia" type="text" placeholder="Ex: 90 dias" className="w-full rounded-xl border border-[#efe3a7] bg-white px-4 py-2.5 text-[#171717] font-medium focus:ring-2 focus:ring-[#f4c400]/40" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#6d6251] uppercase mb-1">Observações do celular</label>
+              <textarea name="celular_observacoes" rows={3} placeholder="Marcas, trincos, pontos específicos e autorização do cliente..." className="w-full resize-none rounded-xl border border-[#efe3a7] bg-white px-4 py-3 text-[#171717] font-medium focus:ring-2 focus:ring-[#f4c400]/40"></textarea>
+            </div>
+          </section>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
@@ -438,15 +666,19 @@ async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
   const dataEntrada = new Date(osData.data_entrada);
   const dataFormatada = dataEntrada.toLocaleDateString('pt-BR');
   const horaFormatada = dataEntrada.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const observacoesSeparadas = separarObservacoesCelular(osData.observacoes);
+  const isOsCelular = isTipoCelular(osData.aparelho_tipo) || Boolean(observacoesSeparadas.dadosCelular);
+  const avariasCelularImage = isOsCelular ? await getPdfCellAvariasImage() : null;
 
   const buildVia = (tituloVia: string): Content[] => {
     return [
       buildPdfHeader({
         brandImage,
         title: `ORDEM DE SERVIÇO - ${tituloVia}`,
+        compact: isOsCelular,
         rightLines: [
-          { text: `Nº ${String(osData.id).padStart(5, '0')}`, fontSize: 18, bold: true, color: '#d11a1a' },
-          { text: `DATA ENTRADA: ${dataFormatada} ${horaFormatada}`, fontSize: 10, bold: true },
+          { text: `Nº ${String(osData.id).padStart(5, '0')}`, fontSize: isOsCelular ? 16 : 18, bold: true, color: '#d11a1a' },
+          { text: `DATA ENTRADA: ${dataFormatada} ${horaFormatada}`, fontSize: isOsCelular ? 8.5 : 10, bold: true },
         ],
       }),
       {
@@ -470,7 +702,7 @@ async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
             ]
           ]
         },
-        margin: [0, 0, 0, 10]
+        margin: isOsCelular ? [0, 0, 0, 4] : [0, 0, 0, 10]
       },
       {
         table: {
@@ -489,7 +721,7 @@ async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
             [
               { text: `ACESSÓRIOS:\n${osData.acessorios_deixados || 'Nenhum'}`, colSpan: 2, margin: [0, 2, 0, 5] },
               {},
-              { text: `OBSERVAÇÕES:\n${osData.observacoes || ''}`, colSpan: 2, margin: [0, 2, 0, 5] },
+              { text: `OBSERVAÇÕES:\n${observacoesSeparadas.observacoesGerais || ''}`, colSpan: 2, margin: [0, 2, 0, 5] },
               {}
             ],
             [
@@ -498,13 +730,23 @@ async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
             ]
           ]
         },
-        margin: [0, 0, 0, 10]
+        margin: isOsCelular ? [0, 0, 0, 4] : [0, 0, 0, 10]
       },
+      ...(observacoesSeparadas.dadosCelular ? ([{
+        table: {
+          widths: ['*'],
+          body: [
+            [{ text: 'DADOS ESPECÍFICOS DO CELULAR', bold: true, color: '#0a0a0a', fillColor: '#f4c400' }],
+            [{ text: observacoesSeparadas.dadosCelular, fontSize: isOsCelular ? 6.7 : 7, lineHeight: isOsCelular ? 1.08 : 1.1 }]
+          ]
+        },
+        margin: isOsCelular ? [0, 0, 0, 4] : [0, 0, 0, 10]
+      }] as Content[]) : []),
       {
         text: 'TERMOS E CONDIÇÕES DA ASSISTÊNCIA',
         bold: true,
-        fontSize: 8,
-        margin: [0, 0, 0, 2]
+        fontSize: isOsCelular ? 7.4 : 8,
+        margin: [0, 0, 0, isOsCelular ? 2 : 2]
       },
       {
         text: [
@@ -516,9 +758,9 @@ async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
           '6 - Informações sobre a O.S. serão fornecidas por meio do seu nº ou pelas confirmações dos dados fornecidos pelo cliente.\n',
           '7 - Deverá ser retirado o aparelho desta O.S, no prazo máximo de 90 dias após notificação, sob pena de venda para ressarcimento.'
         ],
-        fontSize: 7,
+        fontSize: isOsCelular ? 6.15 : 7,
         alignment: 'justify',
-        margin: [0, 0, 0, 15] 
+        margin: isOsCelular ? [0, 0, 0, 7] : [0, 0, 0, 15] 
       },
       {
         columns: [
@@ -526,36 +768,69 @@ async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
             width: '*',
             text: '____________________________________________________\nASSINATURA DO CLIENTE',
             alignment: 'center',
-            fontSize: 8
+            fontSize: isOsCelular ? 7.5 : 8
           },
           {
             width: '*',
             text: '____________________________________________________\n8K ELETRÔNICA - RECEPÇÃO',
             alignment: 'center',
-            fontSize: 8
+            fontSize: isOsCelular ? 7.5 : 8
           }
         ]
       }
     ];
   };
 
+  const folhaAvariasCelular: Content[] = isOsCelular
+    ? ([
+        avariasCelularImage
+          ? {
+              image: avariasCelularImage,
+              fit: [760, 520],
+              alignment: 'center',
+              pageBreak: 'before',
+              pageOrientation: 'landscape',
+              margin: [0, 30, 0, 0],
+            }
+          : {
+              text: 'Folha de avarias visíveis do celular não encontrada.',
+              pageBreak: 'before',
+              alignment: 'center',
+              margin: [0, 260, 0, 0],
+            },
+      ] as Content[])
+    : [];
+
   const docDefinition: TDocumentDefinitions = {
     pageSize: 'A4',
-    pageMargins: [20, 15, 20, 15], 
+    pageMargins: isOsCelular ? [15, 8, 15, 8] : [20, 15, 20, 15], 
     defaultStyle: {
-      fontSize: 9,
+      fontSize: isOsCelular ? 8.25 : 9,
       color: '#333'
     },
-    content: [
-      ...buildVia('VIA DO CLIENTE'),
-      {
-        text: '- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - CORTE AQUI - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -',
-        alignment: 'center',
-        color: '#999',
-        margin: [0, 15, 0, 15]
-      },
-      ...buildVia('VIA DA LOJA')
-    ]
+    content: isOsCelular
+      ? [
+          ...buildVia('VIA DO CLIENTE'),
+          {
+            text: '- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - CORTE AQUI - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -',
+            alignment: 'center',
+            color: '#999',
+            fontSize: 6,
+            margin: [0, 7, 0, 7]
+          },
+          ...buildVia('VIA DA LOJA'),
+          ...folhaAvariasCelular,
+        ]
+      : [
+          ...buildVia('VIA DO CLIENTE'),
+          {
+            text: '- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - CORTE AQUI - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -',
+            alignment: 'center',
+            color: '#999',
+            margin: [0, 15, 0, 15]
+          },
+          ...buildVia('VIA DA LOJA')
+        ]
   };
 
   pdfMake.createPdf(docDefinition).print();
