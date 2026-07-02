@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import * as tus from 'tus-js-client';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { runSupabaseQuery, SessionExpiredError } from '@/lib/supabaseSession';
@@ -27,6 +28,8 @@ type FormState = {
 };
 
 const BUCKET_NAME = 'esquemas-eletricos';
+const UPLOAD_RESUMIVEL_MIN_BYTES = 6 * 1024 * 1024;
+const TUS_CHUNK_SIZE_BYTES = 6 * 1024 * 1024;
 
 const marcas: MarcaEsquema[] = ['Xiaomi', 'Samsung', 'Motorola', 'LG', 'Apple'];
 
@@ -84,6 +87,17 @@ function normalizarMarca(marca: string): MarcaEsquema {
   return marcas.includes(marca as MarcaEsquema) ? (marca as MarcaEsquema) : 'Motorola';
 }
 
+function getSupabaseProjectId() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+
+  try {
+    const host = new URL(supabaseUrl).hostname;
+    return host.split('.')[0] || '';
+  } catch {
+    return '';
+  }
+}
+
 export default function EsquemasEletricosPage() {
   const [esquemas, setEsquemas] = useState<EsquemaEletrico[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -97,6 +111,7 @@ export default function EsquemasEletricosPage() {
   const [arquivos, setArquivos] = useState<File[]>([]);
   const [esquemaEditando, setEsquemaEditando] = useState<EsquemaEletrico | null>(null);
   const [erroConfig, setErroConfig] = useState('');
+  const [uploadStatus, setUploadStatus] = useState('');
 
   useEffect(() => {
     carregarEsquemas();
@@ -173,6 +188,7 @@ export default function EsquemasEletricosPage() {
     setEsquemaEditando(null);
     setFormData(formInicial);
     setArquivos([]);
+    setUploadStatus('');
     setIsModalOpen(true);
   }
 
@@ -185,6 +201,7 @@ export default function EsquemasEletricosPage() {
       descricao: esquema.descricao || '',
     });
     setArquivos([]);
+    setUploadStatus('');
     setIsModalOpen(true);
   }
 
@@ -194,6 +211,7 @@ export default function EsquemasEletricosPage() {
     setEsquemaEditando(null);
     setFormData(formInicial);
     setArquivos([]);
+    setUploadStatus('');
   }
 
   async function abrirEsquema(esquema: EsquemaEletrico) {
@@ -215,6 +233,70 @@ export default function EsquemasEletricosPage() {
     } finally {
       setIsOpeningId(null);
     }
+  }
+
+  async function uploadArquivoEsquema(arquivo: File, storagePath: string) {
+    if (arquivo.size < UPLOAD_RESUMIVEL_MIN_BYTES) {
+      setUploadStatus(`Enviando ${arquivo.name}...`);
+      const { error } = await supabase
+        .storage
+        .from(BUCKET_NAME)
+        .upload(storagePath, arquivo, {
+          contentType: 'application/pdf',
+          upsert: false,
+        });
+
+      if (error) throw error;
+      return;
+    }
+
+    const projectId = getSupabaseProjectId();
+    if (!projectId) {
+      throw new Error('Não foi possível identificar o project id do Supabase para upload resumível.');
+    }
+
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    if (!data.session?.access_token) {
+      throw new SessionExpiredError();
+    }
+
+    setUploadStatus(`Preparando upload grande: ${arquivo.name}`);
+
+    await new Promise<void>((resolve, reject) => {
+      const upload = new tus.Upload(arquivo, {
+        endpoint: `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`,
+        retryDelays: [0, 3000, 5000, 10000, 20000],
+        headers: {
+          authorization: `Bearer ${data.session.access_token}`,
+        },
+        uploadDataDuringCreation: true,
+        removeFingerprintOnSuccess: true,
+        chunkSize: TUS_CHUNK_SIZE_BYTES,
+        metadata: {
+          bucketName: BUCKET_NAME,
+          objectName: storagePath,
+          contentType: 'application/pdf',
+          cacheControl: '3600',
+        },
+        onProgress: (bytesUploaded, bytesTotal) => {
+          const percentual = bytesTotal ? Math.round((bytesUploaded / bytesTotal) * 100) : 0;
+          setUploadStatus(`Enviando ${arquivo.name}: ${percentual}% (${formatarTamanho(bytesUploaded)} de ${formatarTamanho(bytesTotal)})`);
+        },
+        onError: (uploadError) => reject(uploadError),
+        onSuccess: () => resolve(),
+      });
+
+      upload
+        .findPreviousUploads()
+        .then((previousUploads) => {
+          if (previousUploads.length > 0) {
+            upload.resumeFromPreviousUpload(previousUploads[0]);
+          }
+          upload.start();
+        })
+        .catch(reject);
+    });
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -295,15 +377,7 @@ export default function EsquemasEletricosPage() {
         const nomeArquivo = `${Date.now()}-${index + 1}-${slugify(arquivoAtual.name.replace(/\.pdf$/i, '')) || 'esquema'}.pdf`;
         const storagePath = `${marcaSlug}/${modeloSlug}/${nomeArquivo}`;
 
-        const { error: uploadError } = await supabase
-          .storage
-          .from(BUCKET_NAME)
-          .upload(storagePath, arquivoAtual, {
-            contentType: 'application/pdf',
-            upsert: false,
-          });
-
-        if (uploadError) throw uploadError;
+        await uploadArquivoEsquema(arquivoAtual, storagePath);
         arquivosEnviados.push(storagePath);
 
         registros.push({
@@ -326,6 +400,7 @@ export default function EsquemasEletricosPage() {
 
       setFormData(formInicial);
       setArquivos([]);
+      setUploadStatus('');
       setIsModalOpen(false);
       await carregarEsquemas();
       alert(arquivos.length === 1 ? 'Esquema cadastrado com sucesso.' : `${arquivos.length} esquemas cadastrados com sucesso.`);
@@ -335,12 +410,24 @@ export default function EsquemasEletricosPage() {
         await supabase.storage.from(BUCKET_NAME).remove(arquivosEnviados);
       }
       const mensagem = error instanceof Error ? error.message : String(error);
-      if (mensagem.toLowerCase().includes('bucket')) {
+      const mensagemNormalizada = mensagem.toLowerCase();
+      if (error instanceof SessionExpiredError || mensagemNormalizada.includes('jwt') || mensagemNormalizada.includes('session')) {
+        alert('Sua sessão expirou. Faça login novamente e tente enviar o PDF.');
+      } else if (
+        mensagemNormalizada.includes('exceeded') ||
+        mensagemNormalizada.includes('too large') ||
+        mensagemNormalizada.includes('payload') ||
+        mensagemNormalizada.includes('maximum') ||
+        mensagemNormalizada.includes('size')
+      ) {
+        alert('O PDF é maior que o limite configurado no Supabase Storage. Aumente o limite global e/ou o limite do bucket esquemas-eletricos para pelo menos o tamanho do arquivo.');
+      } else if (mensagemNormalizada.includes('bucket')) {
         alert('Não foi possível enviar o PDF. Confira se o bucket esquemas-eletricos foi criado no Supabase.');
       } else {
-        alert('Não foi possível cadastrar o esquema. Confira a tabela e as permissões no Supabase.');
+        alert(`Não foi possível cadastrar o esquema. Detalhes: ${mensagem}`);
       }
     } finally {
+      setUploadStatus('');
       setIsSubmitting(false);
     }
   }
@@ -609,7 +696,10 @@ export default function EsquemasEletricosPage() {
                   type="file"
                   accept="application/pdf,.pdf"
                   multiple
-                  onChange={(event) => setArquivos(Array.from(event.target.files || []))}
+                  onChange={(event) => {
+                    setUploadStatus('');
+                    setArquivos(Array.from(event.target.files || []));
+                  }}
                   className="block w-full border border-[#efe3a7] bg-white px-4 py-3 text-sm font-semibold file:mr-4 file:rounded file:border-0 file:bg-[#f4c400] file:px-4 file:py-2 file:text-sm file:font-black file:text-[#0a0a0a]"
                   required
                 />
@@ -625,6 +715,11 @@ export default function EsquemasEletricosPage() {
                         </li>
                       ))}
                     </ul>
+                  </div>
+                )}
+                {uploadStatus && (
+                  <div className="mt-3 rounded border border-[#f4c400]/50 bg-[#fff8d8] px-4 py-3 text-xs font-black text-[#0a0a0a]">
+                    {uploadStatus}
                   </div>
                 )}
                 </label>
