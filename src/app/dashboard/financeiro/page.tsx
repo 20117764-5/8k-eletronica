@@ -40,9 +40,18 @@ interface Transacao {
 
 const CATEGORIAS_DESPESA = [
   "Aluguel", "Energia Elétrica", "Água", "Internet / Telefone", 
-  "Material de Limpeza", "Compra de Peças (Estoque)", 
+  "Material de Limpeza",
   "Salários / Comissões", "Impostos / Taxas", "Ferramentas / Equipamentos", "Outros"
 ];
+
+function normalizarTexto(valor?: string | null) {
+  return (valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function isDespesaDeEstoque(categoria?: string | null) {
+  const texto = normalizarTexto(categoria);
+  return texto.includes('compra') && texto.includes('estoque') && texto.includes('pe');
+}
 
 function FinanceiroForm() {
   const [mesAtual, setMesAtual] = useState(new Date());
@@ -66,10 +75,10 @@ function FinanceiroForm() {
     const ultimoDia = new Date(mesAtual.getFullYear(), mesAtual.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
     try {
-      // 1. Busca ENTRADAS (Ordens de Serviço Encerradas com valor)
+      // 1. Busca ENTRADAS (Ordens de Servico entregues e reparadas)
       const { data: osData, error: osError } = await supabase
         .from('ordens_servico')
-        .select('id, data_encerramento, valor_final, cliente:clientes(nome_completo), aparelho_tipo')
+        .select('id, data_encerramento, valor_final, cliente:clientes(nome_completo), aparelho_tipo, status, condicao_encerramento')
         .gte('data_encerramento', primeiroDia)
         .lte('data_encerramento', ultimoDia)
         .not('valor_final', 'is', null);
@@ -89,7 +98,11 @@ function FinanceiroForm() {
       const extrato: Transacao[] = [];
 
       osData?.forEach(os => {
-        if (os.valor_final && os.valor_final > 0) {
+        const isEntregueReparado =
+          os.condicao_encerramento === 'Entregue e Reparado' ||
+          os.status === 'Entregue e Reparado';
+
+        if (isEntregueReparado && os.valor_final && os.valor_final > 0) {
           // CORREÇÃO: Definindo o tipo exato em vez de usar 'any' para agradar o ESLint
           const clienteObj = os.cliente as { nome_completo: string } | { nome_completo: string }[] | null;
           const clienteNome = Array.isArray(clienteObj) ? clienteObj[0]?.nome_completo : clienteObj?.nome_completo;
@@ -107,6 +120,10 @@ function FinanceiroForm() {
       });
 
       despesasData?.forEach(desp => {
+        if (isDespesaDeEstoque(desp.categoria)) {
+          return;
+        }
+
         extrato.push({
           id_unica: `desp-${desp.id}`,
           tipo: 'SAIDA',
@@ -257,7 +274,7 @@ function FinanceiroForm() {
         <div className="absolute -right-10 -top-10 text-9xl opacity-10">💰</div>
         <div className="relative z-10 text-center md:text-left">
           <h2 className="text-3xl font-black text-white">Gestão Financeira</h2>
-          <p className="text-[#a3d8e8] font-medium mt-1">Acompanhe suas receitas, despesas e fluxo de caixa.</p>
+          <p className="text-[#a3d8e8] font-medium mt-1">Financeiro geral com despesas operacionais e receitas de O.S. reparadas.</p>
         </div>
 
         <div className="flex flex-col items-center gap-3 relative z-10">
@@ -280,7 +297,7 @@ function FinanceiroForm() {
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-emerald-100 flex justify-between items-center relative overflow-hidden">
             <div className="absolute right-[-10px] bottom-[-10px] text-6xl opacity-10">📈</div>
             <div>
-              <p className="text-xs font-bold text-emerald-600 uppercase mb-1">Receitas (O.S.)</p>
+              <p className="text-xs font-bold text-emerald-600 uppercase mb-1">Receitas (O.S. reparadas)</p>
               <h3 className="text-3xl font-black text-emerald-500">R$ {totalEntradas.toFixed(2)}</h3>
             </div>
           </div>

@@ -13,6 +13,8 @@ type TipoAparelho =
   | 'Inversores solares'
   | 'Geral / Oficina';
 
+type FormaPagamento = 'Pix' | 'Dinheiro' | 'Cartao de credito' | 'Cartao de debito' | 'Transferencia' | 'Outro';
+
 interface Produto {
   id: number;
   codigo_sku: string | null;
@@ -29,6 +31,22 @@ interface Produto {
   condicao: string;
   localizacao: string | null;
   observacoes?: string | null;
+}
+
+interface VendaForm {
+  quantidade: number;
+  desconto: number;
+  forma_pagamento: FormaPagamento;
+  data_venda: string;
+  observacoes: string;
+}
+
+interface VendaEstoqueResumo {
+  id: number;
+  quantidade: number;
+  valor_total: number;
+  lucro: number | null;
+  data_venda: string;
 }
 
 const CATALOGO_ESTOQUE: Record<TipoAparelho, string[]> = {
@@ -144,6 +162,38 @@ const CONDICOES = [
   'Teste pendente',
 ];
 
+const FORMAS_PAGAMENTO: FormaPagamento[] = [
+  'Pix',
+  'Dinheiro',
+  'Cartao de credito',
+  'Cartao de debito',
+  'Transferencia',
+  'Outro',
+];
+
+const MESES_FILTRO = [
+  { valor: 0, label: 'Janeiro' },
+  { valor: 1, label: 'Fevereiro' },
+  { valor: 2, label: 'Março' },
+  { valor: 3, label: 'Abril' },
+  { valor: 4, label: 'Maio' },
+  { valor: 5, label: 'Junho' },
+  { valor: 6, label: 'Julho' },
+  { valor: 7, label: 'Agosto' },
+  { valor: 8, label: 'Setembro' },
+  { valor: 9, label: 'Outubro' },
+  { valor: 10, label: 'Novembro' },
+  { valor: 11, label: 'Dezembro' },
+];
+
+const criarVendaInicial = (): VendaForm => ({
+  quantidade: 1,
+  desconto: 0,
+  forma_pagamento: 'Pix',
+  data_venda: dataAtualFormulario(),
+  observacoes: '',
+});
+
 const criarFormInicial = (tipo: TipoAparelho = 'Celulares', nome = '') => ({
   codigo_sku: '',
   nome,
@@ -163,6 +213,20 @@ const criarFormInicial = (tipo: TipoAparelho = 'Celulares', nome = '') => ({
 
 function normalizarTexto(valor?: string | null) {
   return (valor || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function dataAtualFormulario() {
+  const data = new Date();
+  data.setMinutes(data.getMinutes() - data.getTimezoneOffset());
+  return data.toISOString().slice(0, 10);
+}
+
+function formatarMoeda(valor: number) {
+  return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function dataFormularioParaIso(data: string) {
+  return new Date(`${data}T12:00:00`).toISOString();
 }
 
 function inferirTipo(categoria?: string | null): TipoAparelho {
@@ -191,21 +255,31 @@ function normalizarProduto(produto: Produto): Produto {
 }
 
 export default function EstoquePage() {
+  const dataAtual = new Date();
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [vendasEstoque, setVendasEstoque] = useState<VendaEstoqueResumo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [busca, setBusca] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<TipoAparelho | 'Todos'>('Todos');
   const [filtroSubcategoria, setFiltroSubcategoria] = useState('Todas');
   const [filtroAlerta, setFiltroAlerta] = useState(false);
+  const [mesVendasFiltro, setMesVendasFiltro] = useState(dataAtual.getMonth());
+  const [anoVendasFiltro, setAnoVendasFiltro] = useState(dataAtual.getFullYear());
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [produtoEditando, setProdutoEditando] = useState<Produto | null>(null);
   const [formData, setFormData] = useState(criarFormInicial());
+  const [isVendaModalOpen, setIsVendaModalOpen] = useState(false);
+  const [isVendaSubmitting, setIsVendaSubmitting] = useState(false);
+  const [produtoVenda, setProdutoVenda] = useState<Produto | null>(null);
+  const [vendaData, setVendaData] = useState<VendaForm>(criarVendaInicial());
+  const [isExcluindoId, setIsExcluindoId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchEstoque();
+    fetchVendasEstoque();
   }, []);
 
   useEffect(() => {
@@ -225,6 +299,27 @@ export default function EstoquePage() {
     }
   }
 
+  async function fetchVendasEstoque() {
+    try {
+      const { data, error } = await supabase
+        .from('vendas_estoque')
+        .select('id, quantidade, valor_total, lucro, data_venda')
+        .order('data_venda', { ascending: false });
+
+      if (error) throw error;
+      setVendasEstoque((data || []).map((venda) => ({
+        id: Number(venda.id),
+        quantidade: Number(venda.quantidade || 0),
+        valor_total: Number(venda.valor_total || 0),
+        lucro: venda.lucro === null ? null : Number(venda.lucro || 0),
+        data_venda: venda.data_venda,
+      })));
+    } catch (error) {
+      console.warn('Nao foi possivel carregar os indicadores de vendas do estoque:', error);
+      setVendasEstoque([]);
+    }
+  }
+
   const subcategoriasDisponiveis = useMemo(() => {
     if (filtroTipo !== 'Todos') return CATALOGO_ESTOQUE[filtroTipo];
     return Array.from(new Set(TIPOS_APARELHO.flatMap((tipo) => CATALOGO_ESTOQUE[tipo]))).sort();
@@ -235,6 +330,24 @@ export default function EstoquePage() {
   const valorVendaTotal = produtos.reduce((acc, curr) => acc + (curr.quantidade * curr.valor_venda), 0);
   const produtosBaixoEstoque = produtos.filter((p) => p.quantidade <= p.estoque_minimo);
   const produtosEmFalta = produtos.filter((p) => p.quantidade === 0);
+
+  const valorVendidoTotal = vendasEstoque.reduce((acc, venda) => acc + venda.valor_total, 0);
+  const lucroVendidoTotal = vendasEstoque.reduce((acc, venda) => acc + Number(venda.lucro || 0), 0);
+  const unidadesVendidasTotal = vendasEstoque.reduce((acc, venda) => acc + venda.quantidade, 0);
+  const anosVendasDisponiveis = Array.from(new Set([
+    dataAtual.getFullYear(),
+    ...vendasEstoque.map((venda) => new Date(venda.data_venda).getFullYear()),
+  ])).sort((a, b) => b - a);
+  const vendasPeriodo = vendasEstoque.filter((venda) => {
+    const dataVenda = new Date(venda.data_venda);
+    return dataVenda.getMonth() === mesVendasFiltro && dataVenda.getFullYear() === anoVendasFiltro;
+  });
+  const valorVendidoPeriodo = vendasPeriodo.reduce((acc, venda) => acc + venda.valor_total, 0);
+  const lucroVendidoPeriodo = vendasPeriodo.reduce((acc, venda) => acc + Number(venda.lucro || 0), 0);
+  const unidadesVendidasPeriodo = vendasPeriodo.reduce((acc, venda) => acc + venda.quantidade, 0);
+  const ticketMedioPeriodo = vendasPeriodo.length > 0 ? valorVendidoPeriodo / vendasPeriodo.length : 0;
+  const margemPeriodo = valorVendidoPeriodo > 0 ? (lucroVendidoPeriodo / valorVendidoPeriodo) * 100 : 0;
+  const periodoSelecionadoLabel = `${MESES_FILTRO[mesVendasFiltro].label}/${anoVendasFiltro}`;
 
   const produtosFiltrados = produtos.filter((p) => {
     const termo = normalizarTexto(busca);
@@ -287,6 +400,27 @@ export default function EstoquePage() {
     setIsModalOpen(true);
   };
 
+  const fecharModalVenda = () => {
+    if (isVendaSubmitting) return;
+    setIsVendaModalOpen(false);
+    setProdutoVenda(null);
+    setVendaData(criarVendaInicial());
+  };
+
+  const abrirModalVenda = (produto: Produto) => {
+    if (produto.quantidade <= 0) {
+      alert('Produto em falta. Nao ha quantidade disponivel para vender.');
+      return;
+    }
+
+    setProdutoVenda(produto);
+    setVendaData({
+      ...criarVendaInicial(),
+      quantidade: Math.min(1, produto.quantidade),
+    });
+    setIsVendaModalOpen(true);
+  };
+
   const atualizarTipoFormulario = (tipo: TipoAparelho) => {
     const subcategoria = CATALOGO_ESTOQUE[tipo][0];
     setFormData({
@@ -334,6 +468,7 @@ export default function EstoquePage() {
         const { error } = await supabase.from('estoque').insert([payload]);
         if (error) throw error;
       }
+
       setIsModalOpen(false);
       fetchEstoque();
     } catch (error) {
@@ -356,6 +491,108 @@ export default function EstoquePage() {
     }
   };
 
+  const excluirProduto = async (produto: Produto) => {
+    const confirmou = window.confirm(
+      `Excluir "${produto.nome}" do estoque?\n\nEssa acao remove o produto da lista, mas nao apaga vendas ou despesas ja registradas no financeiro.`
+    );
+
+    if (!confirmou) return;
+
+    setIsExcluindoId(produto.id);
+
+    try {
+      const { error } = await supabase
+        .from('estoque')
+        .delete()
+        .eq('id', produto.id);
+
+      if (error) throw error;
+
+      setProdutos((lista) => lista.filter((item) => item.id !== produto.id));
+      if (produtoVenda?.id === produto.id) fecharModalVenda();
+    } catch (error) {
+      console.error('Erro ao excluir produto:', error);
+      alert('Nao foi possivel excluir o produto. Confira a policy de DELETE da tabela estoque no Supabase.');
+    } finally {
+      setIsExcluindoId(null);
+    }
+  };
+
+  const subtotalVenda = produtoVenda ? vendaData.quantidade * produtoVenda.valor_venda : 0;
+  const descontoVenda = Math.min(Math.max(Number(vendaData.desconto) || 0, 0), subtotalVenda);
+  const totalVenda = Math.max(subtotalVenda - descontoVenda, 0);
+  const custoVenda = produtoVenda ? vendaData.quantidade * produtoVenda.valor_custo : 0;
+  const lucroVenda = totalVenda - custoVenda;
+
+  const handleRegistrarVenda = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!produtoVenda) return;
+
+    const quantidadeVendida = Number(vendaData.quantidade) || 0;
+    const descontoInformado = Number(vendaData.desconto) || 0;
+
+    if (!Number.isInteger(quantidadeVendida) || quantidadeVendida <= 0) {
+      alert('Informe uma quantidade valida para venda.');
+      return;
+    }
+
+    if (quantidadeVendida > produtoVenda.quantidade) {
+      alert(`Quantidade indisponivel. Em estoque: ${produtoVenda.quantidade}.`);
+      return;
+    }
+
+    if (descontoInformado > subtotalVenda) {
+      alert('O desconto nao pode ser maior que o subtotal da venda.');
+      return;
+    }
+
+    const novaQuantidade = produtoVenda.quantidade - quantidadeVendida;
+    setIsVendaSubmitting(true);
+
+    try {
+      const { error: updateError } = await supabase
+        .from('estoque')
+        .update({ quantidade: novaQuantidade })
+        .eq('id', produtoVenda.id);
+
+      if (updateError) throw updateError;
+
+      const { error: vendaError } = await supabase.from('vendas_estoque').insert([{
+        estoque_id: produtoVenda.id,
+        produto_nome: produtoVenda.nome,
+        quantidade: quantidadeVendida,
+        valor_unitario: produtoVenda.valor_venda,
+        desconto: descontoVenda,
+        valor_total: totalVenda,
+        custo_total: custoVenda,
+        lucro: lucroVenda,
+        forma_pagamento: vendaData.forma_pagamento,
+        data_venda: dataFormularioParaIso(vendaData.data_venda),
+        observacoes: vendaData.observacoes.trim() || null,
+      }]);
+
+      if (vendaError) {
+        await supabase
+          .from('estoque')
+          .update({ quantidade: produtoVenda.quantidade })
+          .eq('id', produtoVenda.id);
+        throw vendaError;
+      }
+
+      setProdutos((lista) => lista.map((produto) =>
+        produto.id === produtoVenda.id ? { ...produto, quantidade: novaQuantidade } : produto
+      ));
+      await fetchVendasEstoque();
+      fecharModalVenda();
+      alert('Venda registrada com sucesso.');
+    } catch (error) {
+      console.error('Erro ao registrar venda:', error);
+      alert('Nao foi possivel registrar a venda. Confira se a tabela vendas_estoque existe e se as policies foram aplicadas no Supabase.');
+    } finally {
+      setIsVendaSubmitting(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12 relative">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -364,9 +601,35 @@ export default function EstoquePage() {
             <h2 className="text-3xl font-black text-white">Estoque Multitécnico</h2>
             <p className="text-[#a3d8e8] font-medium mt-1">Peças por aparelho, subcategoria, quantidade, custo, venda e localização.</p>
           </div>
-          <button onClick={() => abrirModalNovo()} className="px-6 py-3 bg-[#38bdf8] text-[#0a6787] font-black rounded-xl hover:bg-white transition-all shadow-lg">
-            Novo item
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div>
+              <label className="mb-1 block text-[10px] font-black uppercase tracking-wide text-[#a3d8e8]">Mês</label>
+              <select
+                value={mesVendasFiltro}
+                onChange={(e) => setMesVendasFiltro(Number(e.target.value))}
+                className="h-11 min-w-36 rounded-xl border border-white/20 bg-white px-3 text-sm font-black text-[#0a6787] outline-none"
+              >
+                {MESES_FILTRO.map((mes) => (
+                  <option key={mes.valor} value={mes.valor}>{mes.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-black uppercase tracking-wide text-[#a3d8e8]">Ano</label>
+              <select
+                value={anoVendasFiltro}
+                onChange={(e) => setAnoVendasFiltro(Number(e.target.value))}
+                className="h-11 min-w-28 rounded-xl border border-white/20 bg-white px-3 text-sm font-black text-[#0a6787] outline-none"
+              >
+                {anosVendasDisponiveis.map((ano) => (
+                  <option key={ano} value={ano}>{ano}</option>
+                ))}
+              </select>
+            </div>
+            <button onClick={() => abrirModalNovo()} className="h-11 px-6 bg-[#38bdf8] text-[#0a6787] font-black rounded-xl hover:bg-white transition-all shadow-lg">
+              Novo item
+            </button>
+          </div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-[#e0f1f7]">
@@ -375,11 +638,11 @@ export default function EstoquePage() {
         </div>
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-[#e0f1f7]">
           <p className="text-xs font-bold text-gray-400 uppercase">Capital investido</p>
-          <p className="text-3xl font-black text-amber-500">R$ {valorCustoTotal.toFixed(2)}</p>
+          <p className="text-3xl font-black text-amber-500">{formatarMoeda(valorCustoTotal)}</p>
         </div>
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-[#e0f1f7]">
           <p className="text-xs font-bold text-gray-400 uppercase">Potencial de venda</p>
-          <p className="text-3xl font-black text-emerald-500">R$ {valorVendaTotal.toFixed(2)}</p>
+          <p className="text-3xl font-black text-emerald-500">{formatarMoeda(valorVendaTotal)}</p>
         </div>
         <button
           type="button"
@@ -392,6 +655,32 @@ export default function EstoquePage() {
           </p>
           <p className={`text-xs mt-1 ${filtroAlerta ? 'text-red-100' : 'text-red-500'}`}>{produtosEmFalta.length} em falta</p>
         </button>
+
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-emerald-100">
+          <p className="text-xs font-bold text-gray-400 uppercase">Vendido em {periodoSelecionadoLabel}</p>
+          <p className="text-3xl font-black text-emerald-600">{formatarMoeda(valorVendidoPeriodo)}</p>
+          <p className="text-xs font-bold text-gray-400 mt-1">Geral: {formatarMoeda(valorVendidoTotal)}</p>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-blue-100">
+          <p className="text-xs font-bold text-gray-400 uppercase">Lucro em {periodoSelecionadoLabel}</p>
+          <p className={`text-3xl font-black ${lucroVendidoPeriodo >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
+            {formatarMoeda(lucroVendidoPeriodo)}
+          </p>
+          <p className="text-xs font-bold text-gray-400 mt-1">Margem: {margemPeriodo.toFixed(1)}% | Geral: {formatarMoeda(lucroVendidoTotal)}</p>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-indigo-100">
+          <p className="text-xs font-bold text-gray-400 uppercase">Ticket médio</p>
+          <p className="text-3xl font-black text-indigo-600">{formatarMoeda(ticketMedioPeriodo)}</p>
+          <p className="text-xs font-bold text-gray-400 mt-1">{vendasPeriodo.length} venda(s) no período</p>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-[#e0f1f7]">
+          <p className="text-xs font-bold text-gray-400 uppercase">Unidades vendidas</p>
+          <p className="text-3xl font-black text-[#0a6787]">{unidadesVendidasPeriodo} <span className="text-sm font-medium text-gray-500">unids</span></p>
+          <p className="text-xs font-bold text-gray-400 mt-1">Geral: {unidadesVendidasTotal} unids</p>
+        </div>
       </div>
 
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-[#e0f1f7] grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
@@ -535,9 +824,30 @@ export default function EstoquePage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button onClick={() => abrirModalEditar(p)} className="px-4 py-2 bg-[#e0f7ff] text-[#0a6787] text-xs font-bold rounded-lg hover:bg-[#0a6787] hover:text-white transition-all">
-                          Editar
-                        </button>
+                        <div className="flex flex-col gap-2 items-end">
+                          <button
+                            onClick={() => abrirModalVenda(p)}
+                            disabled={semEstoque}
+                            className="px-4 py-2 bg-emerald-500 text-white text-xs font-black rounded-lg hover:bg-emerald-600 transition-all disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
+                          >
+                            Vender
+                          </button>
+                          <button onClick={() => abrirModalEditar(p)} className="px-4 py-2 bg-[#e0f7ff] text-[#0a6787] text-xs font-bold rounded-lg hover:bg-[#0a6787] hover:text-white transition-all">
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => excluirProduto(p)}
+                            disabled={isExcluindoId === p.id}
+                            title="Excluir produto"
+                            aria-label={`Excluir ${p.nome}`}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 transition-all hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                              <path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -638,6 +948,114 @@ export default function EstoquePage() {
                 {isSubmitting ? "Salvando..." : "Salvar item"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isVendaModalOpen && produtoVenda && (
+        <div className="fixed inset-0 bg-[#0a6787]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden">
+            <div className="p-6 bg-emerald-500 text-white flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-black">Vender produto</h3>
+                <p className="text-sm font-bold text-emerald-50 mt-1">{produtoVenda.nome}</p>
+              </div>
+              <button onClick={fecharModalVenda} className="text-white hover:text-emerald-100 font-bold text-xl">x</button>
+            </div>
+
+            <form onSubmit={handleRegistrarVenda} className="p-6 space-y-5 bg-[#f8fcff]">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Quantidade vendida *</label>
+                  <input
+                    type="number"
+                    value={vendaData.quantidade}
+                    onChange={(e) => setVendaData({ ...vendaData, quantidade: Number(e.target.value) })}
+                    className="w-full px-4 py-3 bg-white border border-[#e0f1f7] rounded-xl text-[#0a6787] font-black outline-none focus:border-emerald-400"
+                    required
+                    min="1"
+                    max={produtoVenda.quantidade}
+                  />
+                  <p className="mt-1 text-[11px] font-bold text-gray-400">Disponivel: {produtoVenda.quantidade}</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Desconto total (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={vendaData.desconto}
+                    onChange={(e) => setVendaData({ ...vendaData, desconto: Number(e.target.value) })}
+                    className="w-full px-4 py-3 bg-white border border-[#e0f1f7] rounded-xl text-amber-600 font-bold outline-none focus:border-amber-400"
+                    min="0"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Pagamento *</label>
+                  <select
+                    value={vendaData.forma_pagamento}
+                    onChange={(e) => setVendaData({ ...vendaData, forma_pagamento: e.target.value as FormaPagamento })}
+                    className="w-full px-4 py-3 bg-white border border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold outline-none focus:border-emerald-400"
+                    required
+                  >
+                    {FORMAS_PAGAMENTO.map((forma) => <option key={forma} value={forma}>{forma}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Data da venda *</label>
+                  <input
+                    type="date"
+                    value={vendaData.data_venda}
+                    onChange={(e) => setVendaData({ ...vendaData, data_venda: e.target.value })}
+                    className="w-full px-4 py-3 bg-white border border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold outline-none focus:border-emerald-400"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Observacoes</label>
+                  <input
+                    type="text"
+                    value={vendaData.observacoes}
+                    onChange={(e) => setVendaData({ ...vendaData, observacoes: e.target.value })}
+                    className="w-full px-4 py-3 bg-white border border-[#e0f1f7] rounded-xl text-[#0a6787] outline-none focus:border-emerald-400"
+                    placeholder="Opcional"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="bg-white border border-[#e0f1f7] rounded-2xl p-4">
+                  <p className="text-[10px] font-black uppercase text-gray-400">Unitario</p>
+                  <p className="text-lg font-black text-[#0a6787]">{formatarMoeda(produtoVenda.valor_venda)}</p>
+                </div>
+                <div className="bg-white border border-[#e0f1f7] rounded-2xl p-4">
+                  <p className="text-[10px] font-black uppercase text-gray-400">Subtotal</p>
+                  <p className="text-lg font-black text-[#0a6787]">{formatarMoeda(subtotalVenda)}</p>
+                </div>
+                <div className="bg-white border border-[#e0f1f7] rounded-2xl p-4">
+                  <p className="text-[10px] font-black uppercase text-gray-400">Receita</p>
+                  <p className="text-lg font-black text-emerald-500">{formatarMoeda(totalVenda)}</p>
+                </div>
+                <div className="bg-white border border-[#e0f1f7] rounded-2xl p-4">
+                  <p className="text-[10px] font-black uppercase text-gray-400">Lucro estimado</p>
+                  <p className={`text-lg font-black ${lucroVenda >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                    {formatarMoeda(lucroVenda)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-[#e0f1f7] flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+                <button type="button" onClick={fecharModalVenda} className="px-6 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200">Cancelar</button>
+                <button type="submit" disabled={isVendaSubmitting} className="px-8 py-3 bg-emerald-500 text-white font-black rounded-xl hover:bg-emerald-600 shadow-lg disabled:opacity-50">
+                  {isVendaSubmitting ? 'Registrando...' : 'Confirmar venda'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
