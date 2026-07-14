@@ -224,6 +224,9 @@ export default function DashboardLayout({
           <Link href="/dashboard/estoque" className={navLinkClass('/dashboard/estoque')}>
             <span className="text-lg">📦</span><span className="text-sm">Estoque</span>
           </Link>
+          <Link href="/dashboard/garantia-estoque" className={navLinkClass('/dashboard/garantia-estoque')}>
+            <span className="text-lg" aria-hidden="true">&#128737;</span><span className="text-sm">Garantia do Estoque</span>
+          </Link>
         </nav>
 
         <div className="pt-4 border-t border-[#0a0a0a]/20">

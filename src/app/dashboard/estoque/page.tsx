@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { buildPdfHeader, getPdfBrandImage } from '@/lib/pdfBranding';
+import * as pdfMakeModule from 'pdfmake/build/pdfmake';
+import * as pdfFontsModule from 'pdfmake/build/vfs_fonts';
+import { TDocumentDefinitions } from 'pdfmake/interfaces';
 
 type TipoAparelho =
   | 'TV'
@@ -39,6 +43,32 @@ interface VendaForm {
   forma_pagamento: FormaPagamento;
   data_venda: string;
   observacoes: string;
+  cliente_nome: string;
+  cliente_telefone: string;
+}
+
+interface PdfMakeType {
+  vfs: Record<string, string>;
+  createPdf: (docDefinition: TDocumentDefinitions) => {
+    print: () => void;
+    download: (name: string) => void;
+  };
+  default?: unknown;
+}
+
+interface PdfFontsType {
+  pdfMake?: { vfs: Record<string, string> };
+  vfs?: Record<string, string>;
+  default?: unknown;
+}
+
+const pdfMakeImport = pdfMakeModule as unknown as PdfMakeType;
+const pdfFontsImport = pdfFontsModule as unknown as PdfFontsType;
+const pdfMake = (pdfMakeImport.default || pdfMakeImport) as PdfMakeType;
+const pdfFonts = (pdfFontsImport.default || pdfFontsImport) as PdfFontsType;
+
+if (pdfMake && !pdfMake.vfs) {
+  pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : (pdfFonts.vfs || {});
 }
 
 interface VendaEstoqueResumo {
@@ -192,6 +222,8 @@ const criarVendaInicial = (): VendaForm => ({
   forma_pagamento: 'Pix',
   data_venda: dataAtualFormulario(),
   observacoes: '',
+  cliente_nome: '',
+  cliente_telefone: '',
 });
 
 const criarFormInicial = (tipo: TipoAparelho = 'Celulares', nome = '') => ({
@@ -229,6 +261,42 @@ function dataFormularioParaIso(data: string) {
   return new Date(`${data}T12:00:00`).toISOString();
 }
 
+function dataFormularioParaData(data: string) {
+  return new Date(`${data}T12:00:00`);
+}
+
+function formatarDataPtBr(data: string) {
+  return dataFormularioParaData(data).toLocaleDateString('pt-BR');
+}
+
+function gerarDataGarantia(data: string) {
+  const dataGarantia = dataFormularioParaData(data);
+  dataGarantia.setDate(dataGarantia.getDate() + 90);
+  return dataGarantia.toLocaleDateString('pt-BR');
+}
+
+function erroColunaVendaGarantia(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : '';
+  const details = 'details' in error && typeof error.details === 'string' ? error.details : '';
+  const hint = 'hint' in error && typeof error.hint === 'string' ? error.hint : '';
+  const texto = normalizarTexto(`${message} ${details} ${hint}`);
+
+  return texto.includes('cliente_nome') || texto.includes('cliente_telefone') || texto.includes('schema cache');
+}
+
+function montarObservacoesVendaFallback(venda: VendaForm) {
+  const observacoes = venda.observacoes.trim();
+  const cliente = venda.cliente_nome.trim();
+  const telefone = venda.cliente_telefone.trim();
+  const dadosGarantia = [
+    cliente ? `Cliente garantia: ${cliente}` : '',
+    telefone ? `Telefone garantia: ${telefone}` : '',
+  ].filter(Boolean).join(' | ');
+
+  return [observacoes, dadosGarantia].filter(Boolean).join(' | ') || null;
+}
+
 function inferirTipo(categoria?: string | null): TipoAparelho {
   const texto = normalizarTexto(categoria);
   if (texto.includes('celular') || texto.includes('iphone') || texto.includes('smartphone')) return 'Celulares';
@@ -252,6 +320,179 @@ function normalizarProduto(produto: Produto): Produto {
     valor_custo: Number(produto.valor_custo || 0),
     valor_venda: Number(produto.valor_venda || 0),
   };
+}
+
+type GarantiaVendaPdfData = {
+  produto: Produto;
+  venda: VendaForm;
+  quantidadeVendida: number;
+  subtotal: number;
+  desconto: number;
+  total: number;
+};
+
+async function gerarPdfGarantiaVenda({
+  produto,
+  venda,
+  quantidadeVendida,
+  subtotal,
+  desconto,
+  total,
+}: GarantiaVendaPdfData) {
+  const brandImage = await getPdfBrandImage();
+  const dataVenda = formatarDataPtBr(venda.data_venda);
+  const dataGarantia = gerarDataGarantia(venda.data_venda);
+  const dataEmissao = new Date();
+  const dataEmissaoStr = dataEmissao.toLocaleDateString('pt-BR');
+  const horaEmissaoStr = dataEmissao.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const nomeArquivo = `garantia-venda-${produto.id}-${venda.data_venda}.pdf`;
+
+  const termoGarantia = [
+    'A garantia cobre exclusivamente defeito de fabricacao do acessorio/produto vendido, pelo prazo de 90 dias contados da data da venda.',
+    'Para solicitar analise, o cliente deve apresentar este certificado, o produto completo, embalagem e acessorios fornecidos quando eles forem necessarios para identificacao, etiqueta, lote ou numero de serie.',
+    'A garantia nao cobre mau uso, queda, amassado, trinca, risco profundo, contato com liquido, oxidacao, curto, calor excessivo, instalacao inadequada, adaptacao, corte, dobra, rompimento de cabo, conector forcado, fonte ou carregador incompativel, violacao de lacre/etiqueta ou tentativa de reparo por terceiros.',
+    'A garantia nao cobre desgaste natural, danos esteticos apos a entrega, perda de embalagem sem possibilidade de identificar o produto, incompatibilidade causada por modelo informado incorretamente pelo cliente ou uso fora da finalidade do acessorio.',
+    'Para acessorios de celular, computador, TV, som ou similares, a garantia nao cobre o aparelho do cliente, perda de dados, aplicativos, configuracoes, cartoes, chips, peliculas, capinhas ou itens nao descritos neste documento.',
+    'A troca, reparo ou reembolso depende de avaliacao tecnica da 8K Eletronica. Quando constatado defeito coberto, a loja podera substituir por item igual, equivalente ou realizar o reparo conforme disponibilidade.',
+    'Este documento deve ser guardado pelo cliente. Rasuras, informacoes divergentes ou ausencia de comprovacao podem exigir nova conferencia interna antes da garantia ser aceita.',
+  ];
+
+  const produtoRows = [
+    ['Produto', produto.nome],
+    ['SKU', produto.codigo_sku || 'Nao informado'],
+    ['Categoria', produto.categoria || 'Nao informado'],
+    ['Tipo / subfiltro', `${produto.tipo_aparelho || 'Geral'} / ${produto.subcategoria || 'Nao informado'}`],
+    ['Marca / modelo', `${produto.marca || 'Sem marca'} / ${produto.modelo_compativel || 'Sem modelo'}`],
+    ['Condicao', produto.condicao || 'Nao informada'],
+    ['Observacoes do produto', produto.observacoes || 'Sem observacoes'],
+  ];
+
+  const vendaRows = [
+    ['Data da venda', dataVenda],
+    ['Quantidade de acessorios/produtos', String(quantidadeVendida)],
+    ['Valor unitario', formatarMoeda(produto.valor_venda)],
+    ['Subtotal', formatarMoeda(subtotal)],
+    ['Desconto aplicado', desconto > 0 ? formatarMoeda(desconto) : 'Sem desconto'],
+    ['Valor vendido', formatarMoeda(total)],
+    ['Forma de pagamento', venda.forma_pagamento],
+    ['Garantia valida ate', dataGarantia],
+    ['Cliente', venda.cliente_nome.trim() || 'Nao informado'],
+    ['Telefone', venda.cliente_telefone.trim() || 'Nao informado'],
+    ['Observacoes da venda', venda.observacoes.trim() || 'Sem observacoes'],
+  ];
+
+  const docDefinition: TDocumentDefinitions = {
+    pageSize: 'A4',
+    pageMargins: [20, 18, 20, 18],
+    defaultStyle: { fontSize: 7.4 },
+    content: [
+      buildPdfHeader({
+        brandImage,
+        title: 'CERTIFICADO DE GARANTIA',
+        subtitle: 'VENDA DE ACESSORIO / PRODUTO',
+        compact: true,
+        rightLines: [
+          { text: `Produto #${produto.id}`, bold: true, fontSize: 8.2 },
+          { text: `Emitido em ${dataEmissaoStr} as ${horaEmissaoStr}`, fontSize: 7.2 },
+        ],
+      }),
+      {
+        text: 'Dados do produto vendido',
+        style: 'sectionTitle',
+      },
+      {
+        table: {
+          widths: [96, '*'],
+          body: produtoRows.map(([label, value]) => [
+            { text: label, bold: true, fillColor: '#fff6bf' },
+            { text: value },
+          ]),
+        },
+        layout: {
+          hLineColor: () => '#d9d9d9',
+          vLineColor: () => '#d9d9d9',
+          paddingLeft: () => 4,
+          paddingRight: () => 4,
+          paddingTop: () => 2,
+          paddingBottom: () => 2,
+        },
+        margin: [0, 0, 0, 4],
+      },
+      {
+        text: 'Resumo da venda',
+        style: 'sectionTitle',
+      },
+      {
+        table: {
+          widths: [96, '*'],
+          body: vendaRows.map(([label, value]) => [
+            { text: label, bold: true, fillColor: '#fff6bf' },
+            { text: value },
+          ]),
+        },
+        layout: {
+          hLineColor: () => '#d9d9d9',
+          vLineColor: () => '#d9d9d9',
+          paddingLeft: () => 4,
+          paddingRight: () => 4,
+          paddingTop: () => 2,
+          paddingBottom: () => 2,
+        },
+        margin: [0, 0, 0, 4],
+      },
+      {
+        text: 'Termos de garantia para venda de acessorios',
+        style: 'sectionTitle',
+      },
+      {
+        ol: termoGarantia,
+        margin: [0, 0, 0, 5],
+        fontSize: 6.8,
+        lineHeight: 0.98,
+      },
+      {
+        table: {
+          widths: ['*', '*'],
+          body: [
+            [
+              {
+                text: 'Declaro que recebi o produto acima, conferi quantidade, condicao aparente, compatibilidade informada e estou ciente dos termos de garantia.',
+                colSpan: 2,
+                alignment: 'center',
+                bold: true,
+                fontSize: 7,
+                margin: [0, 2, 0, 2],
+              },
+              {},
+            ],
+            [
+              { text: '\n\n\n\n______________________________________________\nAssinatura do cliente', alignment: 'center', fontSize: 7 },
+              { text: '\n\n\n\n______________________________________________\n8K Eletronica', alignment: 'center', fontSize: 7 },
+            ],
+          ],
+        },
+        layout: {
+          hLineColor: () => '#d9d9d9',
+          vLineColor: () => '#d9d9d9',
+          paddingLeft: () => 4,
+          paddingRight: () => 4,
+          paddingTop: () => 2,
+          paddingBottom: () => 2,
+        },
+      },
+    ],
+    styles: {
+      sectionTitle: {
+        fontSize: 8,
+        bold: true,
+        color: '#111111',
+        fillColor: '#f4c400',
+        margin: [0, 4, 0, 2],
+      },
+    },
+  };
+
+  pdfMake.createPdf(docDefinition).download(nomeArquivo);
 }
 
 export default function EstoquePage() {
@@ -557,7 +798,7 @@ export default function EstoquePage() {
 
       if (updateError) throw updateError;
 
-      const { error: vendaError } = await supabase.from('vendas_estoque').insert([{
+      const vendaPayloadBase = {
         estoque_id: produtoVenda.id,
         produto_nome: produtoVenda.nome,
         quantidade: quantidadeVendida,
@@ -569,7 +810,24 @@ export default function EstoquePage() {
         forma_pagamento: vendaData.forma_pagamento,
         data_venda: dataFormularioParaIso(vendaData.data_venda),
         observacoes: vendaData.observacoes.trim() || null,
-      }]);
+      };
+
+      const vendaPayloadComGarantia = {
+        ...vendaPayloadBase,
+        cliente_nome: vendaData.cliente_nome.trim() || null,
+        cliente_telefone: vendaData.cliente_telefone.trim() || null,
+      };
+
+      const { error: vendaErrorInicial } = await supabase.from('vendas_estoque').insert([vendaPayloadComGarantia]);
+      let vendaError = vendaErrorInicial;
+
+      if (vendaErrorInicial && erroColunaVendaGarantia(vendaErrorInicial)) {
+        const { error: fallbackError } = await supabase.from('vendas_estoque').insert([{
+          ...vendaPayloadBase,
+          observacoes: montarObservacoesVendaFallback(vendaData),
+        }]);
+        vendaError = fallbackError;
+      }
 
       if (vendaError) {
         await supabase
@@ -583,8 +841,25 @@ export default function EstoquePage() {
         produto.id === produtoVenda.id ? { ...produto, quantidade: novaQuantidade } : produto
       ));
       await fetchVendasEstoque();
+      let pdfGerado = true;
+      try {
+        await gerarPdfGarantiaVenda({
+          produto: produtoVenda,
+          venda: vendaData,
+          quantidadeVendida,
+          subtotal: subtotalVenda,
+          desconto: descontoVenda,
+          total: totalVenda,
+        });
+      } catch (pdfError) {
+        pdfGerado = false;
+        console.error('Erro ao gerar PDF de garantia da venda:', pdfError);
+      }
       fecharModalVenda();
-      alert('Venda registrada com sucesso.');
+      alert(pdfGerado
+        ? 'Venda registrada com sucesso. O PDF de garantia foi gerado.'
+        : 'Venda registrada, mas nao foi possivel gerar o PDF de garantia.'
+      );
     } catch (error) {
       console.error('Erro ao registrar venda:', error);
       alert('Nao foi possivel registrar a venda. Confira se a tabela vendas_estoque existe e se as policies foram aplicadas no Supabase.');
@@ -964,6 +1239,30 @@ export default function EstoquePage() {
             </div>
 
             <form onSubmit={handleRegistrarVenda} className="p-6 space-y-5 bg-[#f8fcff]">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-2xl border border-[#e0f1f7] bg-white p-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Cliente para garantia</label>
+                  <input
+                    type="text"
+                    value={vendaData.cliente_nome}
+                    onChange={(e) => setVendaData({ ...vendaData, cliente_nome: e.target.value })}
+                    className="w-full px-4 py-3 bg-[#f8fcff] border border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold outline-none focus:border-emerald-400"
+                    placeholder="Opcional"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Telefone do cliente</label>
+                  <input
+                    type="text"
+                    value={vendaData.cliente_telefone}
+                    onChange={(e) => setVendaData({ ...vendaData, cliente_telefone: e.target.value })}
+                    className="w-full px-4 py-3 bg-[#f8fcff] border border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold outline-none focus:border-emerald-400"
+                    placeholder="Opcional"
+                  />
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Quantidade vendida *</label>
