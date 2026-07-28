@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
+import OsFotosSection from '@/components/OsFotosSection';
 import { supabase } from '@/lib/supabase';
+import { criarTokenUploadFotos } from '@/lib/osFotos';
 import { buildPdfHeader, getPdfBrandImage, getPdfCellAvariasImage } from '@/lib/pdfBranding';
 
 // =========================================================================
@@ -131,6 +133,11 @@ function AlterarOsForm() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [dataHoraFormatada, setDataHoraFormatada] = useState('');
+  const [fotoUploadToken, setFotoUploadToken] = useState('');
+
+  useEffect(() => {
+    setFotoUploadToken(criarTokenUploadFotos());
+  }, []);
 
   useEffect(() => {
     async function fetchOsECliente() {
@@ -434,6 +441,10 @@ function AlterarOsForm() {
             <textarea name="observacoes" defaultValue={osData.observacoes || ''} rows={2} className="w-full px-4 py-3 bg-[#f8fcff] border border-[#e0f1f7] rounded-xl text-[#0a6787] font-medium focus:ring-2 focus:ring-[#0a6787]/30 resize-none"></textarea>
           </div>
         </div>
+
+        {fotoUploadToken && (
+          <OsFotosSection osId={osData.id} uploadToken={fotoUploadToken} />
+        )}
 
         <div className="flex flex-col md:flex-row items-center justify-between pt-6 border-t border-[#e0f1f7] gap-4">
           <div className="flex gap-4 w-full md:w-auto">

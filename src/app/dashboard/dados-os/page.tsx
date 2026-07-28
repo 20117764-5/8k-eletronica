@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
+import OsFotosSection from '@/components/OsFotosSection';
 import { supabase } from '@/lib/supabase'; 
+import { criarTokenUploadFotos, vincularFotosTokenAoOs } from '@/lib/osFotos';
 import { buildPdfHeader, getPdfBrandImage, getPdfCellAvariasImage } from '@/lib/pdfBranding';
 
 // Importações para gerar o PDF
@@ -263,6 +265,11 @@ function DadosOsForm() {
   const [serial, setSerial] = useState('');
   const [observacoes, setObservacoes] = useState(''); // NOVO ESTADO PARA AS OBSERVAÇÕES
   const [modoCelular, setModoCelular] = useState(false);
+  const [fotoUploadToken, setFotoUploadToken] = useState('');
+
+  useEffect(() => {
+    setFotoUploadToken(criarTokenUploadFotos());
+  }, []);
 
   // Busca o próximo número da O.S.
   useEffect(() => {
@@ -370,9 +377,20 @@ function DadosOsForm() {
       const { data, error } = await supabase.from('ordens_servico').insert([novaOS]).select().single();
       if (error) throw error;
       const osCriada = data as OSData;
+      let avisoFotos = '';
+
+      if (fotoUploadToken) {
+        try {
+          await vincularFotosTokenAoOs(fotoUploadToken, osCriada.id);
+        } catch (fotoError) {
+          console.warn('Nao foi possivel vincular fotos a O.S.:', fotoError);
+          avisoFotos = ' Algumas fotos podem nao ter sido vinculadas automaticamente.';
+        }
+      }
+
       await gerarPdfOS(osCriada, cliente);
       abrirWhatsAppOS(osCriada, cliente, whatsappPopup);
-      alert(`Sucesso! O.S. Nº ${data.id} gerada com sucesso. A impressão será iniciada.`);
+      alert(`Sucesso! O.S. Nº ${osCriada.id} gerada com sucesso. A impressão será iniciada.${avisoFotos}`);
       router.push('/dashboard'); 
     } catch (error) {
       whatsappPopup?.close();
@@ -618,6 +636,10 @@ function DadosOsForm() {
             ></textarea>
           </div>
         </div>
+
+        {fotoUploadToken && (
+          <OsFotosSection uploadToken={fotoUploadToken} />
+        )}
 
         <div className="flex flex-col md:flex-row items-center justify-between pt-6 border-t border-[#e0f1f7] gap-4">
           <div className="flex gap-4 w-full md:w-auto">
