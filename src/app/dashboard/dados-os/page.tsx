@@ -16,9 +16,9 @@ import { TDocumentDefinitions, Content } from 'pdfmake/interfaces';
 interface PdfMakeType {
   vfs: Record<string, string>;
   createPdf: (docDefinition: TDocumentDefinitions) => {
-    download: (defaultFileName?: string) => void;
-    print: () => void;
-    open: () => void;
+    download: (defaultFileName?: string) => Promise<void>;
+    print: (win?: Window | null) => Promise<void>;
+    open: (win?: Window | null) => Promise<void>;
   };
   default?: unknown;
 }
@@ -241,7 +241,48 @@ function abrirWhatsAppOS(osData: OSData, cliente: ClienteData, janela?: Window |
     return;
   }
 
-  window.open(url, '_blank', 'noopener,noreferrer');
+  const novaJanela = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!novaJanela) {
+    alert('O WhatsApp nao foi aberto automaticamente. Verifique o bloqueador de pop-ups do navegador.');
+  }
+}
+
+function abrirJanelaImpressaoOS() {
+  const janela = window.open('', '_blank');
+
+  if (!janela) {
+    alert('A janela de impressao foi bloqueada pelo navegador. Libere pop-ups para imprimir a O.S. automaticamente.');
+    return null;
+  }
+
+  janela.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <title>Gerando impressao da O.S.</title>
+        <style>
+          body {
+            align-items: center;
+            background: #fff8d8;
+            color: #0a0a0a;
+            display: flex;
+            font-family: Arial, sans-serif;
+            font-weight: 700;
+            height: 100vh;
+            justify-content: center;
+            margin: 0;
+            text-align: center;
+          }
+        </style>
+      </head>
+      <body>
+        <div>Gerando PDF da Ordem de Servico...</div>
+      </body>
+    </html>
+  `);
+  janela.document.close();
+
+  return janela;
 }
 
 function DadosOsForm() {
@@ -346,6 +387,7 @@ function DadosOsForm() {
       return;
     }
     setIsSubmitting(true);
+    const pdfPopup = abrirJanelaImpressaoOS();
     const whatsappPopup = cliente.telefone ? window.open('about:blank', '_blank') : null;
     const formData = new FormData(e.currentTarget);
     const valorSeguroStr = formData.get('valor_seguro') as string;
@@ -388,11 +430,20 @@ function DadosOsForm() {
         }
       }
 
-      await gerarPdfOS(osCriada, cliente);
+      let avisoPdf = '';
+      try {
+        await gerarPdfOS(osCriada, cliente, pdfPopup);
+      } catch (pdfError) {
+        pdfPopup?.close();
+        console.error('Nao foi possivel abrir o PDF da O.S.:', pdfError);
+        avisoPdf = ' A O.S. foi salva, mas o PDF nao abriu automaticamente. Libere pop-ups do navegador e reimprima pela tela de alterar O.S.';
+      }
+
       abrirWhatsAppOS(osCriada, cliente, whatsappPopup);
-      alert(`Sucesso! O.S. Nº ${osCriada.id} gerada com sucesso. A impressão será iniciada.${avisoFotos}`);
+      alert(`Sucesso! O.S. Nº ${osCriada.id} gerada com sucesso. A impressão será iniciada.${avisoFotos}${avisoPdf}`);
       router.push('/dashboard'); 
     } catch (error) {
+      pdfPopup?.close();
       whatsappPopup?.close();
       console.error("Erro ao salvar O.S.:", error);
       alert("Ocorreu um erro ao gravar a O.S. Verifique o console.");
@@ -683,7 +734,7 @@ function DadosOsForm() {
 // =========================================================================
 // FUNÇÃO QUE DESENHA E MANDA DIRETO PARA IMPRESSÃO 
 // =========================================================================
-async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
+async function gerarPdfOS(osData: OSData, cliente: ClienteData, janelaImpressao?: Window | null) {
   const brandImage = await getPdfBrandImage();
   const dataEntrada = new Date(osData.data_entrada);
   const dataFormatada = dataEntrada.toLocaleDateString('pt-BR');
@@ -855,7 +906,7 @@ async function gerarPdfOS(osData: OSData, cliente: ClienteData) {
         ]
   };
 
-  pdfMake.createPdf(docDefinition).print();
+  await pdfMake.createPdf(docDefinition).print(janelaImpressao);
 }
 
 export default function DadosOsPage() {
