@@ -383,6 +383,7 @@ function AlterarOsForm() {
             <option value="Aguardando Peça">Aguardando Peça</option>
             <option value="Consertado / Pronto para entrega">Consertado / Pronto para entrega</option>
             <option value="Pronto p/ entrega">Pronto p/ entrega</option>
+            <option value="Devolução">Devolução</option>
             <option value="Entregue ao Cliente">Entregue ao Cliente</option>
             <option value="Devolvido sem conserto">Devolvido sem conserto</option>
           </select>
