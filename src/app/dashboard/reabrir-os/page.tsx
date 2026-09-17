@@ -72,7 +72,11 @@ function ReabrirOsForm() {
           condicao_encerramento: null,               // Remove a condição de fechamento
           forma_pagamento: null,                     // Reseta o pagamento
           desconto: 0,
-          valor_final: null
+          valor_final: null,
+          parcelas: null,
+          taxa_cartao_percentual: null,
+          valor_taxa_cartao: null,
+          valor_liquido: null,
         })
         .eq('id', osData.id);
 

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 type CondicaoPeca = 'Nova' | 'Usada';
+type EstadoPeca = 'Boa' | 'Ruim';
 type StatusPeca = 'Disponível' | 'Vendido';
 type FiltroStatus = 'disponiveis' | 'vendidos' | 'todos';
 
@@ -16,6 +17,7 @@ interface PecaVenda {
   versao: string | null;
   codigo: string | null;
   condicao: CondicaoPeca;
+  estado: EstadoPeca | null;
   local_armazenamento: string;
   status: StatusPeca;
   data_venda: string | null;
@@ -29,6 +31,7 @@ interface PecaForm {
   versao: string;
   codigo: string;
   condicao: CondicaoPeca;
+  estado: EstadoPeca | '';
   local_armazenamento: string;
 }
 
@@ -47,6 +50,7 @@ function criarFormInicial(): PecaForm {
     versao: '',
     codigo: '',
     condicao: 'Usada',
+    estado: '',
     local_armazenamento: '',
   };
 }
@@ -86,6 +90,7 @@ function normalizarPeca(item: Record<string, unknown>): PecaVenda {
     versao: item.versao ? String(item.versao) : null,
     codigo: item.codigo ? String(item.codigo) : null,
     condicao: item.condicao === 'Nova' ? 'Nova' : 'Usada',
+    estado: item.estado === 'Boa' || item.estado === 'Ruim' ? item.estado : null,
     local_armazenamento: String(item.local_armazenamento || ''),
     status: item.status === 'Vendido' ? 'Vendido' : 'Disponível',
     data_venda: item.data_venda ? String(item.data_venda) : null,
@@ -104,6 +109,8 @@ export default function EstoquePecasVendaPage() {
   const [formData, setFormData] = useState<PecaForm>(criarFormInicial());
   const [isSalvando, setIsSalvando] = useState(false);
   const [idProcessando, setIdProcessando] = useState<number | null>(null);
+  const recuperando = useRef(false);
+  const [aviso, setAviso] = useState('');
 
   async function carregarPecas() {
     setIsLoading(true);
@@ -148,6 +155,7 @@ export default function EstoquePecasVendaPage() {
         peca.versao,
         peca.codigo,
         peca.condicao,
+        peca.estado,
         peca.local_armazenamento,
         peca.status,
         formatarData(peca.data_cadastro),
@@ -178,6 +186,7 @@ export default function EstoquePecasVendaPage() {
       versao: peca.versao || '',
       codigo: peca.codigo || '',
       condicao: peca.condicao,
+      estado: peca.estado || '',
       local_armazenamento: peca.local_armazenamento,
     });
     setIsModalOpen(true);
@@ -192,6 +201,11 @@ export default function EstoquePecasVendaPage() {
 
   async function salvarPeca(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSalvando) return;
+    if (formData.estado !== 'Boa' && formData.estado !== 'Ruim') {
+      alert('Informe se a peça está boa ou ruim.');
+      return;
+    }
     setIsSalvando(true);
 
     const payload = {
@@ -202,6 +216,7 @@ export default function EstoquePecasVendaPage() {
       versao: formData.versao.trim() || null,
       codigo: formData.codigo.trim() || null,
       condicao: formData.condicao,
+      estado: formData.estado,
       local_armazenamento: formData.local_armazenamento.trim(),
     };
 
@@ -254,6 +269,33 @@ export default function EstoquePecasVendaPage() {
       console.error('Erro ao dar baixa na peça:', error);
       alert(`Não foi possível registrar a venda. ${mensagemDoErro(error)}`);
     } finally {
+      setIdProcessando(null);
+    }
+  }
+
+  async function recuperarPeca(peca: PecaVenda) {
+    if (recuperando.current || idProcessando !== null || peca.status !== 'Vendido') return;
+    if (!window.confirm(`Recuperar “${peca.nome_peca}” para o estoque?\n\nA peça voltará para Disponíveis e a data da venda será removida. Confira o estado e o local de armazenamento em Editar após a devolução. Esta ação não altera lançamentos financeiros.`)) return;
+
+    recuperando.current = true;
+    setIdProcessando(peca.id);
+    setAviso('');
+    try {
+      const { data, error } = await supabase
+        .from('estoque_pecas_venda')
+        .update({ status: 'Disponível', data_venda: null })
+        .eq('id', peca.id)
+        .eq('status', 'Vendido')
+        .select('*')
+        .single();
+      if (error) throw error;
+      const recuperada = normalizarPeca(data as Record<string, unknown>);
+      setPecas(lista => lista.map(item => item.id === peca.id ? recuperada : item));
+      setAviso(`“${peca.nome_peca}” recuperada. Ela está na lista de Disponíveis. Confira seu estado e local em Editar.`);
+    } catch (error) {
+      alert(`Não foi possível recuperar a peça. Atualize a lista e tente novamente. ${mensagemDoErro(error)}`);
+    } finally {
+      recuperando.current = false;
       setIdProcessando(null);
     }
   }
@@ -355,6 +397,7 @@ export default function EstoquePecasVendaPage() {
         </div>
       </section>
 
+      {aviso && <div role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm font-bold text-emerald-700">{aviso}</div>}
       {erroCarregamento && (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm font-bold text-red-700">
           {erroCarregamento}
@@ -369,7 +412,7 @@ export default function EstoquePecasVendaPage() {
                 <th className="px-5 py-4">Cadastro / status</th>
                 <th className="px-5 py-4">Peça</th>
                 <th className="px-5 py-4">Aplicação</th>
-                <th className="px-5 py-4">Condição</th>
+                <th className="px-5 py-4">Condição / Estado</th>
                 <th className="px-5 py-4">Local</th>
                 <th className="px-5 py-4 text-right">Ações</th>
               </tr>
@@ -414,10 +457,18 @@ export default function EstoquePecasVendaPage() {
                       }`}>
                         {peca.condicao}
                       </span>
+                      <div className={`mt-3 text-xs font-bold ${peca.estado === 'Boa' ? 'text-emerald-700' : peca.estado === 'Ruim' ? 'text-red-600' : 'text-gray-500'}`}>
+                        Estado: {peca.estado || 'Não informado'}
+                      </div>
                     </td>
                     <td className="min-w-[150px] px-5 py-4 font-bold text-gray-700">{peca.local_armazenamento}</td>
                     <td className="min-w-[230px] px-5 py-4">
                       <div className="flex flex-wrap justify-end gap-2">
+                        {foiVendida && (
+                          <button type="button" onClick={() => recuperarPeca(peca)} disabled={idProcessando !== null} className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-black text-white hover:bg-amber-600 disabled:opacity-50">
+                            {idProcessando === peca.id ? 'Aguarde...' : 'Recuperar'}
+                          </button>
+                        )}
                         {!foiVendida && (
                           <button
                             type="button"
@@ -489,6 +540,14 @@ export default function EstoquePecasVendaPage() {
                 <div>
                   <label className="mb-1 block text-xs font-black uppercase text-[#73a8bd]">Modelo do aparelho *</label>
                   <input type="text" required value={formData.modelo} onChange={(event) => setFormData({ ...formData, modelo: event.target.value })} placeholder="Ex.: 43LM6300" className="w-full rounded-xl border border-[#e0f1f7] bg-[#f8fcff] px-4 py-3 font-medium text-[#0a6787] outline-none focus:border-[#38bdf8]" />
+                </div>
+                <div>
+                  <label htmlFor="estado-peca" className="mb-1 block text-xs font-black uppercase text-[#73a8bd]">Estado da peça *</label>
+                  <select id="estado-peca" required value={formData.estado} onChange={event => setFormData({ ...formData, estado: event.target.value as EstadoPeca | '' })} className="w-full rounded-xl border border-[#e0f1f7] bg-[#f8fcff] px-4 py-3 font-bold text-[#0a6787] outline-none focus:border-[#38bdf8]">
+                    <option value="" disabled>Selecione o estado</option>
+                    <option value="Boa">Boa</option>
+                    <option value="Ruim">Ruim</option>
+                  </select>
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-black uppercase text-[#73a8bd]">Versão</label>

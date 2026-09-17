@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
+import { calcularPagamento, isCartao, TAXAS_CREDITO } from '@/lib/taxasCartao';
+import CorrigirPagamento from './CorrigirPagamento';
 import { buildPdfHeader, getPdfBrandImage } from '@/lib/pdfBranding';
 
 // PDFMake Configurações
@@ -44,6 +46,7 @@ interface Servico { id: string; descricao: string; valor: number | string; }
 interface Peca { id: string; descricao: string; valor: number | string; quantidade: number | string; data: string; }
 
 interface OSData {
+  parcelas?: number | null;
   id: number; cliente_id: number; data_entrada: string; aparelho_tipo: string; marca: string; modelo: string | null; serial_imei: string | null; defeito_reclamacao: string;
   servicos_orcamento?: Servico[] | null; pecas_orcamento?: Peca[] | null; laudo_tecnico?: string | null;
   status: string; data_encerramento?: string | null; condicao_encerramento?: string | null; desconto?: number | null; forma_pagamento?: string | null; valor_final?: number | null;
@@ -64,6 +67,7 @@ function EncerrarOsForm() {
   // Estados do Formulário de Encerramento
   const [condicao, setCondicao] = useState('Entregue e Reparado');
   const [formaPagamento, setFormaPagamento] = useState('Dinheiro');
+  const [parcelas, setParcelas] = useState(1);
   const [desconto, setDesconto] = useState<string | number>(0);
 
   useEffect(() => {
@@ -83,6 +87,7 @@ function EncerrarOsForm() {
             setIsJaEncerrada(true);
             if (os.condicao_encerramento) setCondicao(os.condicao_encerramento);
             if (os.forma_pagamento) setFormaPagamento(os.forma_pagamento);
+            setParcelas(os.parcelas || 1);
             if (os.desconto) setDesconto(os.desconto);
           }
 
@@ -107,14 +112,21 @@ function EncerrarOsForm() {
   const subTotal = totalServicos + totalPecas;
   
   const valorDesconto = Number(desconto) || 0;
-  const valorFinal = subTotal - valorDesconto;
+  const valorFinal = isJaEncerrada && osData?.valor_final != null
+    ? Number(osData.valor_final)
+    : Math.round((subTotal - valorDesconto + Number.EPSILON) * 100) / 100;
+  const pagamento = calcularPagamento(Math.max(0, valorFinal), formaPagamento, parcelas);
+  const descricaoPagamento = formaPagamento === 'Cartão de Crédito'
+    ? `${formaPagamento} (${isJaEncerrada && osData?.parcelas == null ? 'parcelas não registradas' : `${parcelas}x`})`
+    : formaPagamento;
 
   // GERAR PDF DE ENCERRAMENTO (Com ou Sem Garantia)
   const gerarPdfEncerramento = async () => {
     if (!osData || !cliente) return;
     const brandImage = await getPdfBrandImage();
 
-    const dataAtual = new Date();
+    // Reimpressões usam a saída original para não renovar a garantia.
+    const dataAtual = osData.data_encerramento ? new Date(osData.data_encerramento) : new Date();
     const dataAtualStr = dataAtual.toLocaleDateString('pt-BR');
     const horaAtualStr = dataAtual.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
@@ -178,7 +190,7 @@ function EncerrarOsForm() {
               [{ text: 'SUBTOTAL (Peças + Mão de Obra):', alignment: 'right' }, { text: `R$ ${subTotal.toFixed(2)}`, alignment: 'right' }],
               [{ text: 'DESCONTO:', alignment: 'right' }, { text: `R$ ${valorDesconto.toFixed(2)}`, alignment: 'right' }],
               [{ text: 'TOTAL PAGO:', alignment: 'right', bold: true }, { text: `R$ ${valorFinal.toFixed(2)}`, alignment: 'right', bold: true }],
-              [{ text: `FORMA DE PAGAMENTO: ${formaPagamento}`, colSpan: 2, alignment: 'right', italics: true }, {}]
+              [{ text: `FORMA DE PAGAMENTO: ${descricaoPagamento}`, colSpan: 2, alignment: 'right', italics: true }, {}]
             ]
           }, margin: [0, 0, 0, 20], layout: 'noBorders'
         },
@@ -218,25 +230,34 @@ function EncerrarOsForm() {
   };
 
   const handleEncerrar = async () => {
-    if (!osData) return;
+    if (!osData || isSubmitting || isJaEncerrada) return;
+    if (!Number.isFinite(valorFinal) || valorFinal < 0 || valorDesconto < 0) {
+      alert('O desconto deve estar entre zero e o subtotal da O.S.');
+      return;
+    }
     setIsSubmitting(true);
 
     try {
-      const { error } = await supabase
+      const dataEncerramento = new Date().toISOString();
+      const { data: osSalva, error } = await supabase
         .from('ordens_servico')
         .update({
           status: condicao, // Atualiza o status geral da O.S. para a condição escolhida
           condicao_encerramento: condicao,
-          data_encerramento: new Date().toISOString(),
+          data_encerramento: dataEncerramento,
           forma_pagamento: formaPagamento,
           desconto: valorDesconto,
-          valor_final: valorFinal
+          valor_final: valorFinal,
+          ...pagamento,
         })
-        .eq('id', osData.id);
+        .eq('id', osData.id)
+        .select('*')
+        .single();
 
       if (error) throw error;
 
       alert('O.S. Encerrada com sucesso!');
+      setOsData(osSalva as OSData);
       setIsJaEncerrada(true);
       await gerarPdfEncerramento(); // Já abre a impressão na hora
       
@@ -263,7 +284,13 @@ function EncerrarOsForm() {
           <p className="text-gray-500 mt-2">A Ordem de Serviço Nº {String(osData.id).padStart(5, '0')} foi finalizada em {new Date(osData.data_encerramento || '').toLocaleDateString('pt-BR')}.</p>
           <p className="font-bold text-emerald-700 mt-1">Situação: {condicao}</p>
         </div>
-        <div className="flex justify-center gap-4 pt-6 border-t border-gray-100">
+        <p className="text-sm text-gray-600">Pagamento: {descricaoPagamento} · Total pago: R$ {valorFinal.toFixed(2)}</p>
+        <CorrigirPagamento os={osData} onSaved={corrigido => {
+          setOsData(atual => atual ? { ...atual, ...corrigido } : atual);
+          setFormaPagamento(corrigido.forma_pagamento);
+          setParcelas(corrigido.parcelas);
+        }} />
+        <div className="flex flex-wrap justify-center gap-4 pt-6 border-t border-gray-100">
           <Link href="/dashboard" className="px-6 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200">
             Voltar ao Início
           </Link>
@@ -320,7 +347,7 @@ function EncerrarOsForm() {
                 <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Forma de Pagamento</label>
                 <select 
                   value={formaPagamento}
-                  onChange={(e) => setFormaPagamento(e.target.value)}
+                  onChange={(e) => { setFormaPagamento(e.target.value); setParcelas(1); }}
                   className="w-full px-4 py-3 bg-[#f8fcff] border border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold outline-none"
                 >
                   <option value="Dinheiro">Dinheiro</option>
@@ -330,6 +357,15 @@ function EncerrarOsForm() {
                   <option value="Cortesia / Isento">Cortesia / Isento</option>
                 </select>
               </div>
+              {formaPagamento === 'Cartão de Crédito' && (
+                <div className="col-span-2">
+                  <label htmlFor="parcelas-os" className="block text-xs font-bold text-gray-400 uppercase mb-2">Número de parcelas</label>
+                  <select id="parcelas-os" value={parcelas} onChange={e => setParcelas(Number(e.target.value))} className="w-full px-4 py-3 bg-[#f8fcff] border border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold">
+                    {TAXAS_CREDITO.map((taxa, i) => <option key={i + 1} value={i + 1}>{i + 1 === 1 ? '1x — à vista' : `${i + 1}x`} — taxa {taxa.toFixed(2).replace('.', ',')}%</option>)}
+                  </select>
+                </div>
+              )}
+              {formaPagamento === 'Cartão de Débito' && <p className="col-span-2 text-sm text-gray-500">Débito à vista — taxa de 1,44%.</p>}
             </div>
           </div>
         </div>
@@ -360,6 +396,13 @@ function EncerrarOsForm() {
               <span className="text-xl font-black text-emerald-300">TOTAL A PAGAR:</span>
               <span className="text-3xl font-black text-emerald-400">R$ {valorFinal.toFixed(2)}</span>
             </div>
+            {isCartao(formaPagamento) && (
+              <div className="space-y-3 border-t border-white/20 pt-4">
+                <div className="flex justify-between gap-3 text-amber-200"><span>Taxa do cartão ({pagamento.taxa_cartao_percentual.toFixed(2).replace('.', ',')}%):</span><span>− R$ {pagamento.valor_taxa_cartao.toFixed(2)}</span></div>
+                <div className="flex justify-between gap-3 font-black text-emerald-300"><span>Receita após taxa:</span><span>R$ {pagamento.valor_liquido.toFixed(2)}</span></div>
+                <p className="text-xs text-[#a3d8e8]">Taxa descontada do recebimento da loja. O total pago pelo cliente permanece acima.</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

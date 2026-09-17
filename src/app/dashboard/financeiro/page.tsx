@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState, Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
+import ReceitaModal from './ReceitaModal';
+import { liquidoRegistrado } from '@/lib/taxasCartao';
 import { buildPdfHeader, getPdfBrandImage } from '@/lib/pdfBranding';
 
 // PDFMake Configurações
@@ -36,6 +38,10 @@ interface Transacao {
   valor: number;
   data: string;
   os_id?: number;
+  forma_pagamento?: string;
+  observacoes?: string;
+  valor_liquido?: number | null;
+  valor_taxa_cartao?: number;
 }
 
 const CATEGORIAS_DESPESA = [
@@ -54,6 +60,8 @@ function isDespesaDeEstoque(categoria?: string | null) {
 }
 
 function FinanceiroForm() {
+  const [isReceitaModalOpen, setIsReceitaModalOpen] = useState(false);
+  const [erroFinanceiro, setErroFinanceiro] = useState('');
   const [mesAtual, setMesAtual] = useState(new Date());
   const [transacoes, setTransacoes] = useState<Transacao[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -71,6 +79,7 @@ function FinanceiroForm() {
 
   const fetchFinanceiro = useCallback(async () => {
     setIsLoading(true);
+    setErroFinanceiro('');
     const primeiroDia = new Date(mesAtual.getFullYear(), mesAtual.getMonth(), 1).toISOString();
     const ultimoDia = new Date(mesAtual.getFullYear(), mesAtual.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
@@ -78,7 +87,7 @@ function FinanceiroForm() {
       // 1. Busca ENTRADAS (Ordens de Servico entregues e reparadas)
       const { data: osData, error: osError } = await supabase
         .from('ordens_servico')
-        .select('id, data_encerramento, valor_final, cliente:clientes(nome_completo), aparelho_tipo, status, condicao_encerramento')
+        .select('*, cliente:clientes(nome_completo)')
         .gte('data_encerramento', primeiroDia)
         .lte('data_encerramento', ultimoDia)
         .not('valor_final', 'is', null);
@@ -94,8 +103,34 @@ function FinanceiroForm() {
 
       if (despError) throw despError;
 
+      const ano = mesAtual.getFullYear();
+      const mes = String(mesAtual.getMonth() + 1).padStart(2, '0');
+      const fim = String(new Date(ano, mesAtual.getMonth() + 1, 0).getDate()).padStart(2, '0');
+      const { data: receitasData, error: receitasError } = await supabase
+        .from('receitas_manuais')
+        .select('id, descricao, categoria, valor, data_receita, forma_pagamento, observacoes')
+        .gte('data_receita', `${ano}-${mes}-01`)
+        .lte('data_receita', `${ano}-${mes}-${fim}`);
+      if (receitasError) {
+        console.error('Erro ao carregar receitas manuais:', receitasError);
+        setErroFinanceiro('As receitas manuais não puderam ser carregadas. Os totais abaixo estão incompletos. Verifique a conexão e a ativação do cadastro de receitas no banco de dados.');
+      }
+
       // 3. Unifica e Ordena tudo
       const extrato: Transacao[] = [];
+
+      receitasData?.forEach(receita => extrato.push({
+        id_unica: `receita-${receita.id}`,
+        tipo: 'ENTRADA',
+        descricao: receita.descricao,
+        categoria: receita.categoria,
+        valor: Number(receita.valor),
+        data: `${receita.data_receita}T12:00:00`,
+        forma_pagamento: receita.forma_pagamento,
+        observacoes: receita.observacoes || undefined,
+        valor_liquido: Number(receita.valor), // Receitas manuais já são valores recebidos.
+        valor_taxa_cartao: 0,
+      }));
 
       osData?.forEach(os => {
         const isEntregueReparado =
@@ -114,7 +149,12 @@ function FinanceiroForm() {
             categoria: 'Receita de Serviços',
             valor: Number(os.valor_final),
             data: os.data_encerramento as string,
-            os_id: os.id
+            os_id: os.id,
+            forma_pagamento: os.forma_pagamento === 'Cartão de Crédito'
+              ? `${os.forma_pagamento} (${os.parcelas ? `${os.parcelas}x` : 'parcelas não registradas'})`
+              : os.forma_pagamento || undefined,
+            valor_liquido: liquidoRegistrado(Number(os.valor_final), os.forma_pagamento, os.valor_liquido),
+            valor_taxa_cartao: Number(os.valor_taxa_cartao || 0),
           });
         }
       });
@@ -140,6 +180,8 @@ function FinanceiroForm() {
       setTransacoes(extrato);
     } catch (error) {
       console.error("Erro ao buscar dados financeiros:", error);
+      setTransacoes([]);
+      setErroFinanceiro('Não foi possível carregar o financeiro. Tente novamente.');
     } finally {
       setIsLoading(false);
     }
@@ -177,6 +219,10 @@ function FinanceiroForm() {
   // CÁLCULOS E KPI'S
   // ==========================================
   const totalEntradas = transacoes.filter(t => t.tipo === 'ENTRADA').reduce((acc, curr) => acc + curr.valor, 0);
+  const entradas = transacoes.filter(t => t.tipo === 'ENTRADA');
+  const totalReceitasLiquidas = entradas.reduce((acc, t) => acc + Math.round((t.valor_liquido ?? 0) * 100), 0) / 100;
+  const totalTaxasCartao = entradas.reduce((acc, t) => acc + Math.round((t.valor_taxa_cartao || 0) * 100), 0) / 100;
+  const receitasSemTaxa = entradas.filter(t => t.valor_liquido == null).length;
   const totalSaidas = transacoes.filter(t => t.tipo === 'SAIDA').reduce((acc, curr) => acc + curr.valor, 0);
   const saldoLiquido = totalEntradas - totalSaidas;
   const isPositivo = saldoLiquido >= 0;
@@ -202,7 +248,7 @@ function FinanceiroForm() {
 
     const tableBody = transacoes.map(t => [
       new Date(t.data).toLocaleDateString('pt-BR'),
-      t.descricao,
+      [t.descricao, t.forma_pagamento, t.observacoes].filter(Boolean).join(' — '),
       t.categoria,
       { text: t.tipo === 'ENTRADA' ? `R$ ${t.valor.toFixed(2)}` : '', color: 'green', alignment: 'right' as const },
       { text: t.tipo === 'SAIDA' ? `R$ ${t.valor.toFixed(2)}` : '', color: 'red', alignment: 'right' as const }
@@ -218,7 +264,9 @@ function FinanceiroForm() {
           rightLines: [
             { text: `Receitas: R$ ${totalEntradas.toFixed(2)}`, bold: true, color: '#047857' },
             { text: `Despesas: R$ ${totalSaidas.toFixed(2)}`, bold: true, color: '#b91c1c' },
-            { text: `Saldo: R$ ${saldoLiquido.toFixed(2)}`, bold: true, color: isPositivo ? '#111111' : '#b91c1c' },
+            { text: `Saldo antes das taxas: R$ ${saldoLiquido.toFixed(2)}`, bold: true, color: isPositivo ? '#111111' : '#b91c1c' },
+            { text: `Receitas após taxas${receitasSemTaxa ? ' (parcial)' : ''}: R$ ${totalReceitasLiquidas.toFixed(2)}`, bold: true, color: '#047857' },
+            { text: `Taxas registradas: R$ ${totalTaxasCartao.toFixed(2)}`, color: '#b91c1c' },
           ],
         }),
         
@@ -230,7 +278,7 @@ function FinanceiroForm() {
               [
                 { text: `RECEITAS (Entradas):\nR$ ${totalEntradas.toFixed(2)}`, bold: true, fillColor: '#ecfdf5', color: '#047857', margin: [5, 10, 5, 10], alignment: 'center' },
                 { text: `DESPESAS (Saídas):\nR$ ${totalSaidas.toFixed(2)}`, bold: true, fillColor: '#fef2f2', color: '#b91c1c', margin: [5, 10, 5, 10], alignment: 'center' },
-                { text: `SALDO LÍQUIDO:\nR$ ${saldoLiquido.toFixed(2)}`, bold: true, fillColor: isPositivo ? '#eff6ff' : '#fef2f2', color: isPositivo ? '#1d4ed8' : '#b91c1c', margin: [5, 10, 5, 10], alignment: 'center' }
+                { text: `SALDO ANTES DAS TAXAS:\nR$ ${saldoLiquido.toFixed(2)}`, bold: true, fillColor: isPositivo ? '#eff6ff' : '#fef2f2', color: isPositivo ? '#1d4ed8' : '#b91c1c', margin: [5, 10, 5, 10], alignment: 'center' }
               ]
             ]
           },
@@ -238,7 +286,8 @@ function FinanceiroForm() {
           margin: [0, 0, 0, 20]
         },
 
-        { text: 'MOVIMENTAÇÃO DETALHADA', bold: true, margin: [0, 0, 0, 10] },
+        ...(receitasSemTaxa ? [{ text: `${receitasSemTaxa} O.S. no cartão sem taxa registrada não incluída(s) no total após taxas.`, color: '#b45309', margin: [0, 0, 0, 10] as [number, number, number, number] }] : []),
+        { text: 'MOVIMENTAÇÃO DETALHADA (VALORES ORIGINAIS)', bold: true, margin: [0, 0, 0, 10] },
         
         {
           table: {
@@ -274,7 +323,7 @@ function FinanceiroForm() {
         <div className="absolute -right-10 -top-10 text-9xl opacity-10">💰</div>
         <div className="relative z-10 text-center md:text-left">
           <h2 className="text-3xl font-black text-white">Gestão Financeira</h2>
-          <p className="text-[#a3d8e8] font-medium mt-1">Financeiro geral com despesas operacionais e receitas de O.S. reparadas.</p>
+          <p className="text-[#a3d8e8] font-medium mt-1">Despesas, receitas de O.S., vendas e outros serviços.</p>
         </div>
 
         <div className="flex flex-col items-center gap-3 relative z-10">
@@ -283,6 +332,7 @@ function FinanceiroForm() {
             <span className="w-40 text-center font-black text-white uppercase tracking-wider text-sm">{mesFormatado}</span>
             <button onClick={proximoMes} className="w-10 h-10 flex items-center justify-center bg-white/20 rounded-xl text-white font-bold hover:bg-white hover:text-[#0a6787] transition-all">&gt;</button>
           </div>
+          <button onClick={() => setIsReceitaModalOpen(true)} className="px-6 py-3 w-full bg-emerald-600 text-white font-black rounded-xl hover:bg-emerald-700 transition-all shadow-lg">+ Adicionar receita</button>
           <button onClick={() => setIsDespesaModalOpen(true)} className="px-6 py-3 w-full bg-red-500 text-white font-black rounded-xl hover:bg-red-600 transition-all shadow-lg flex items-center justify-center gap-2">
             <span>💸</span> Lançar Despesa
           </button>
@@ -290,6 +340,7 @@ function FinanceiroForm() {
       </div>
 
       {/* KPI'S E GRÁFICOS */}
+      {erroFinanceiro && <div role="alert" className="rounded-xl bg-red-50 p-4 text-sm font-bold text-red-700">{erroFinanceiro}<button type="button" onClick={fetchFinanceiro} className="ml-3 underline">Tentar novamente</button></div>}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         
         {/* COLUNA 1: CARDS DE RESUMO */}
@@ -297,11 +348,18 @@ function FinanceiroForm() {
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-emerald-100 flex justify-between items-center relative overflow-hidden">
             <div className="absolute right-[-10px] bottom-[-10px] text-6xl opacity-10">📈</div>
             <div>
-              <p className="text-xs font-bold text-emerald-600 uppercase mb-1">Receitas (O.S. reparadas)</p>
+              <p className="text-xs font-bold text-emerald-600 uppercase mb-1">Receitas (antes das taxas)</p>
               <h3 className="text-3xl font-black text-emerald-500">R$ {totalEntradas.toFixed(2)}</h3>
             </div>
           </div>
           
+          <div className="bg-emerald-50 p-6 rounded-3xl shadow-sm border border-emerald-200">
+            <p className="text-xs font-bold text-emerald-700 uppercase mb-1">Receitas após taxas do cartão{receitasSemTaxa ? ' (parcial)' : ''}</p>
+            <h3 className="text-3xl font-black text-emerald-700">R$ {totalReceitasLiquidas.toFixed(2)}</h3>
+            <p className="text-xs text-emerald-800 mt-2">Taxas descontadas: R$ {totalTaxasCartao.toFixed(2)}</p>
+            <p className="text-xs text-gray-600 mt-1">O.S. após taxas + receitas manuais pelo valor recebido. Total do mês de encerramento, antes das despesas.</p>
+            {receitasSemTaxa > 0 && <p className="text-xs font-bold text-amber-800 mt-2">{receitasSemTaxa} O.S. no cartão sem taxa registrada fora deste total. O histórico anterior permanece sem cálculo presumido.</p>}
+          </div>
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-red-100 flex justify-between items-center relative overflow-hidden">
              <div className="absolute right-[-10px] bottom-[-10px] text-6xl opacity-10">📉</div>
             <div>
@@ -312,7 +370,7 @@ function FinanceiroForm() {
 
           <div className={`p-6 rounded-3xl shadow-sm border flex justify-between items-center relative overflow-hidden ${isPositivo ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'}`}>
             <div>
-              <p className={`text-xs font-bold uppercase mb-1 ${isPositivo ? 'text-blue-600' : 'text-red-600'}`}>Saldo Líquido</p>
+              <p className={`text-xs font-bold uppercase mb-1 ${isPositivo ? 'text-blue-600' : 'text-red-600'}`}>Saldo antes das taxas</p>
               <h3 className={`text-4xl font-black ${isPositivo ? 'text-blue-600' : 'text-red-600'}`}>R$ {saldoLiquido.toFixed(2)}</h3>
             </div>
           </div>
@@ -382,7 +440,7 @@ function FinanceiroForm() {
             <span className="w-2 h-6 bg-[#38bdf8] rounded-full"></span>
             Extrato Detalhado
           </h3>
-          <button onClick={imprimirExtrato} className="px-5 py-2 bg-white border border-[#a3d8e8] text-[#0a6787] font-bold rounded-xl hover:bg-[#e0f7ff] transition-all text-xs flex items-center gap-2 shadow-sm">
+          <button disabled={isLoading || !!erroFinanceiro} onClick={imprimirExtrato} className="disabled:opacity-50 px-5 py-2 bg-white border border-[#a3d8e8] text-[#0a6787] font-bold rounded-xl hover:bg-[#e0f7ff] transition-all text-xs flex items-center gap-2 shadow-sm">
             <span>🖨️</span> Imprimir Extrato
           </button>
         </div>
@@ -418,6 +476,10 @@ function FinanceiroForm() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="font-bold text-[#0a6787]">{t.descricao}</div>
+                      {t.forma_pagamento && <div className="text-xs text-gray-500 mt-1">{t.os_id ? 'Pagamento' : 'Receita manual'} · {t.forma_pagamento}</div>}
+                      {t.os_id && t.valor_liquido != null && <div className="text-xs text-emerald-700 mt-1">Taxa: R$ {(t.valor_taxa_cartao || 0).toFixed(2)} · Líquido: R$ {t.valor_liquido.toFixed(2)}</div>}
+                      {t.os_id && t.valor_liquido == null && <div className="text-xs text-amber-700 mt-1">Taxa não registrada neste encerramento.</div>}
+                      {t.observacoes && <div className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">{t.observacoes}</div>}
                       {t.os_id && <div className="text-[10px] text-gray-400 uppercase mt-0.5">Venda de Serviço Registrada</div>}
                     </td>
                     <td className="px-6 py-4">
@@ -435,6 +497,11 @@ function FinanceiroForm() {
       </div>
 
       {/* MODAL: LANÇAR DESPESA */}
+      {isReceitaModalOpen && <ReceitaModal onClose={() => setIsReceitaModalOpen(false)} onSaved={(data) => {
+        setIsReceitaModalOpen(false);
+        const [ano, mes] = data.split('-').map(Number);
+        setMesAtual(new Date(ano, mes - 1, 1));
+      }} />}
       {isDespesaModalOpen && (
         <div className="fixed inset-0 bg-[#0a6787]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all">

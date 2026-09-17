@@ -23,6 +23,11 @@ create table if not exists public.estoque_pecas_venda (
   )
 );
 
+-- Tambem atualiza instalacoes existentes sem presumir o estado das pecas.
+alter table public.estoque_pecas_venda
+  add column if not exists estado text
+  constraint estoque_pecas_venda_estado_check check (estado in ('Boa', 'Ruim'));
+
 create index if not exists estoque_pecas_venda_status_idx
   on public.estoque_pecas_venda(status);
 
