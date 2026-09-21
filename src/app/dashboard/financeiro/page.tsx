@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
 import ReceitaModal from './ReceitaModal';
+import EditarLancamento, { type LancamentoEditavel } from './EditarLancamento';
 import { liquidoRegistrado } from '@/lib/taxasCartao';
 import { buildPdfHeader, getPdfBrandImage } from '@/lib/pdfBranding';
 
@@ -31,6 +32,7 @@ if (pdfMake && !pdfMake.vfs) {
 }
 
 interface Transacao {
+  editavel?: LancamentoEditavel;
   id_unica: string;
   tipo: 'ENTRADA' | 'SAIDA';
   descricao: string;
@@ -60,6 +62,8 @@ function isDespesaDeEstoque(categoria?: string | null) {
 }
 
 function FinanceiroForm() {
+  const [editando, setEditando] = useState<LancamentoEditavel | null>(null);
+  const [avisoEdicao, setAvisoEdicao] = useState('');
   const [isReceitaModalOpen, setIsReceitaModalOpen] = useState(false);
   const [erroFinanceiro, setErroFinanceiro] = useState('');
   const [mesAtual, setMesAtual] = useState(new Date());
@@ -120,6 +124,7 @@ function FinanceiroForm() {
       const extrato: Transacao[] = [];
 
       receitasData?.forEach(receita => extrato.push({
+        editavel: { id: String(receita.id), tabela: 'receitas_manuais', descricao: receita.descricao, valor: Number(receita.valor), categoria: receita.categoria, data: receita.data_receita, forma_pagamento: receita.forma_pagamento, observacoes: receita.observacoes || '' },
         id_unica: `receita-${receita.id}`,
         tipo: 'ENTRADA',
         descricao: receita.descricao,
@@ -166,6 +171,7 @@ function FinanceiroForm() {
 
         extrato.push({
           id_unica: `desp-${desp.id}`,
+          editavel: { id: String(desp.id), tabela: 'despesas', descricao: desp.descricao, valor: Number(desp.valor), categoria: desp.categoria, data: desp.data_despesa },
           tipo: 'SAIDA',
           descricao: desp.descricao,
           categoria: desp.categoria,
@@ -340,6 +346,7 @@ function FinanceiroForm() {
       </div>
 
       {/* KPI'S E GRÁFICOS */}
+      {avisoEdicao && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm font-bold text-emerald-700">{avisoEdicao}</p>}
       {erroFinanceiro && <div role="alert" className="rounded-xl bg-red-50 p-4 text-sm font-bold text-red-700">{erroFinanceiro}<button type="button" onClick={fetchFinanceiro} className="ml-3 underline">Tentar novamente</button></div>}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         
@@ -454,13 +461,14 @@ function FinanceiroForm() {
                 <th className="px-6 py-4">Descrição / Origem</th>
                 <th className="px-6 py-4">Categoria</th>
                 <th className="px-6 py-4 text-right">Valor</th>
+                <th className="px-6 py-4 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#f0f9ff]">
               {isLoading ? (
-                <tr><td colSpan={5} className="px-6 py-10 text-center text-[#38bdf8] font-bold animate-pulse">Carregando transações...</td></tr>
+                <tr><td colSpan={6} className="px-6 py-10 text-center text-[#38bdf8] font-bold animate-pulse">Carregando transações...</td></tr>
               ) : transacoes.length === 0 ? (
-                <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-400 font-medium">Nenhuma movimentação neste mês.</td></tr>
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400 font-medium">Nenhuma movimentação neste mês.</td></tr>
               ) : (
                 transacoes.map((t) => (
                   <tr key={t.id_unica} className="hover:bg-[#f8fcff] transition-colors group">
@@ -488,6 +496,9 @@ function FinanceiroForm() {
                     <td className={`px-6 py-4 text-right font-black ${t.tipo === 'ENTRADA' ? 'text-emerald-500' : 'text-red-500'}`}>
                       {t.tipo === 'ENTRADA' ? '+' : '-'} R$ {t.valor.toFixed(2)}
                     </td>
+                    <td className="px-6 py-4 text-right">
+                      {t.editavel ? <button type="button" onClick={() => { setAvisoEdicao(''); setEditando(t.editavel!); }} aria-label={`Editar ${t.descricao}`} className="rounded-lg bg-[#e0f7ff] px-4 py-2 text-xs font-bold text-[#0a6787] hover:bg-[#0a6787] hover:text-white">Editar</button> : <span className="text-xs text-gray-500">Via O.S.</span>}
+                    </td>
                   </tr>
                 ))
               )}
@@ -497,6 +508,12 @@ function FinanceiroForm() {
       </div>
 
       {/* MODAL: LANÇAR DESPESA */}
+      {editando && <EditarLancamento lancamento={editando} categoriasDespesa={CATEGORIAS_DESPESA} onClose={() => setEditando(null)} onSaved={data => {
+        setEditando(null);
+        setAvisoEdicao('Lançamento atualizado. Os totais e o extrato serão recalculados no mês da data informada.');
+        const [ano, mes] = data.split('-').map(Number);
+        setMesAtual(new Date(ano, mes - 1, 1));
+      }} />}
       {isReceitaModalOpen && <ReceitaModal onClose={() => setIsReceitaModalOpen(false)} onSaved={(data) => {
         setIsReceitaModalOpen(false);
         const [ano, mes] = data.split('-').map(Number);

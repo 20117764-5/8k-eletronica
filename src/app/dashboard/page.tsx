@@ -263,35 +263,35 @@ export default function DashboardPage() {
             <span className="px-3 py-1 text-[10px] font-bold bg-[#f0f9ff] text-[#0a6787] rounded-lg uppercase border border-[#e0f1f7]">Últimos 6 meses</span>
           </div>
           
-          <div className="flex-1 flex items-end justify-between px-2 gap-2 relative border-b border-[#f0f9ff] pb-6 mt-4">
-            {/* Linhas de grade (Background) */}
-            <div className="absolute w-full border-t border-dashed border-[#e0f1f7] bottom-[25%] z-0"></div>
-            <div className="absolute w-full border-t border-dashed border-[#e0f1f7] bottom-[50%] z-0"></div>
-            <div className="absolute w-full border-t border-dashed border-[#e0f1f7] bottom-[75%] z-0"></div>
-            <div className="absolute w-full border-t border-dashed border-[#e0f1f7] bottom-[100%] z-0 text-[9px] text-gray-300 -mt-3 right-0">{maiorPicoGrafico}</div>
+          <div className="relative mt-4 h-64 border-b border-[#f0f9ff] px-2 pb-6">
+            {/* A altura fixa torna percentuais das barras previsíveis. */}
+            <div className="pointer-events-none absolute inset-x-2 top-0 border-t border-dashed border-[#e0f1f7]"></div>
+            <div className="pointer-events-none absolute inset-x-2 top-1/4 border-t border-dashed border-[#e0f1f7]"></div>
+            <div className="pointer-events-none absolute inset-x-2 top-1/2 border-t border-dashed border-[#e0f1f7]"></div>
+            <div className="pointer-events-none absolute inset-x-2 top-3/4 border-t border-dashed border-[#e0f1f7]"></div>
+            <span className="pointer-events-none absolute -top-4 right-2 text-[9px] text-gray-300">{maiorPicoGrafico}</span>
 
-            {/* Barras do Gráfico */}
             {isLoading ? (
-              <div className="w-full h-full flex items-center justify-center text-[#73a8bd] text-sm font-bold animate-pulse">Desenhando gráfico...</div>
+              <div className="flex h-full items-center justify-center text-sm font-bold text-[#73a8bd] animate-pulse">Desenhando gráfico...</div>
             ) : (
-              dadosGrafico.map((d, idx) => {
-                const alturaPercentual = Math.round((d.total / maiorPicoGrafico) * 100);
-                return (
-                  <div key={idx} className="relative flex flex-col items-center z-10 w-full group">
-                    {/* Tooltip (Hover) */}
-                    <div className="absolute -top-8 bg-[#0a6787] text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                      {d.total} O.S.
+              <div className="relative z-10 flex h-full items-end justify-between gap-2">
+                {dadosGrafico.map((d, idx) => {
+                  const alturaPercentual = d.total > 0 ? Math.max(4, Math.round((d.total / maiorPicoGrafico) * 100)) : 0;
+                  return (
+                    <div key={idx} className="group relative flex h-full min-w-0 flex-1 flex-col items-center justify-end">
+                      <div
+                        className={`relative w-full max-w-[40px] rounded-t-lg transition-all duration-1000 ease-out ${idx === dadosGrafico.length - 1 ? 'bg-[#38bdf8] shadow-[0_0_15px_rgba(56,189,248,0.4)]' : 'bg-[#0a6787]/20 group-hover:bg-[#0a6787]/40'}`}
+                        style={{ height: `${alturaPercentual}%`, minHeight: d.total > 0 ? '8px' : '0px' }}
+                      >
+                        <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-[#0a6787] px-2 py-1 text-[10px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
+                          {d.total} O.S.
+                        </span>
+                      </div>
+                      <span className="absolute -bottom-6 text-[10px] font-bold text-gray-500">{d.mes}</span>
                     </div>
-                    {/* Barra */}
-                    <div 
-                      className={`w-full max-w-[40px] rounded-t-lg transition-all duration-1000 ease-out ${idx === dadosGrafico.length - 1 ? 'bg-[#38bdf8] shadow-[0_0_15px_rgba(56,189,248,0.4)]' : 'bg-[#0a6787]/20 hover:bg-[#0a6787]/40'}`} 
-                      style={{ height: `${alturaPercentual}%`, minHeight: d.total > 0 ? '10%' : '2%' }}
-                    ></div>
-                    {/* Label do Mês */}
-                    <span className="absolute -bottom-6 text-[10px] font-bold text-gray-500">{d.mes}</span>
-                  </div>
-                )
-              })
+                  );
+                })}
+              </div>
             )}
           </div>
           <div className="mt-8 text-center">
