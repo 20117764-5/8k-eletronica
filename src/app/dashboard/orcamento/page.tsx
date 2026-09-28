@@ -135,8 +135,23 @@ function OrcamentoForm() {
   const imprimirLaudo = async () => {
     if(!osData || !cliente) return;
     const brandImage = await getPdfBrandImage();
+    const aparelhoDescricao = [
+      osData.aparelho_tipo,
+      osData.marca,
+      osData.modelo || 'Modelo não informado',
+    ].filter(Boolean).join(' · ');
+    const possuiLaudo = laudoTecnico.trim().length > 0;
+
     const docDefinition: TDocumentDefinitions = {
-      pageSize: 'A4', pageMargins: [40, 40, 40, 40],
+      pageSize: 'A4',
+      pageMargins: [38, 30, 38, 45],
+      footer: (currentPage, pageCount) => ({
+        columns: [
+          { text: '8K ELETRÔNICA  •  CNPJ: 68.753.232/0001-54', fontSize: 7, color: '#64748b' },
+          { text: `Página ${currentPage} de ${pageCount}`, alignment: 'right', fontSize: 7, color: '#64748b' },
+        ],
+        margin: [38, 0, 38, 16],
+      }),
       content: [
         buildPdfHeader({
           brandImage,
@@ -144,12 +159,86 @@ function OrcamentoForm() {
           accentColor: '#f4c400',
           rightLines: [{ text: `O.S. Nº ${String(osData.id).padStart(5, '0')}`, fontSize: 14, bold: true, color: '#111111' }],
         }),
-        { text: `O.S. Nº: ${String(osData.id).padStart(5, '0')}`, bold: true, margin: [0, 0, 0, 10] },
-        { text: `CLIENTE: ${cliente.nome_completo}`, margin: [0, 0, 0, 5] },
-        { text: `APARELHO: ${osData.aparelho_tipo} | MARCA: ${osData.marca} | MODELO: ${osData.modelo || 'N/A'}`, margin: [0, 0, 0, 20] },
-        { text: 'DESCRIÇÃO DO LAUDO:', bold: true, margin: [0, 0, 0, 10] },
-        { text: laudoTecnico || 'Nenhum laudo informado.', margin: [0, 0, 0, 50], alignment: 'justify' },
-        { text: '____________________________________________________\nAssinatura do Técnico Responsável', alignment: 'center', fontSize: 10 }
+        { text: 'IDENTIFICAÇÃO DO ATENDIMENTO', fontSize: 9, bold: true, color: '#0a6787', margin: [0, 2, 0, 6] },
+        {
+          table: {
+            widths: ['*', '*'],
+            body: [[
+              {
+                stack: [
+                  { text: 'CLIENTE', fontSize: 7, bold: true, color: '#0a6787', margin: [0, 0, 0, 3] },
+                  { text: cliente.nome_completo || 'Não informado', fontSize: 10, bold: true, color: '#1f2937' },
+                ],
+              },
+              {
+                stack: [
+                  { text: 'ORDEM DE SERVIÇO', fontSize: 7, bold: true, color: '#0a6787', margin: [0, 0, 0, 3] },
+                  { text: `Nº ${String(osData.id).padStart(5, '0')}`, fontSize: 10, bold: true, color: '#1f2937' },
+                ],
+              },
+            ], [
+              {
+                colSpan: 2,
+                stack: [
+                  { text: 'APARELHO', fontSize: 7, bold: true, color: '#0a6787', margin: [0, 0, 0, 3] },
+                  { text: aparelhoDescricao, fontSize: 10, color: '#1f2937' },
+                ],
+              },
+              {},
+            ]],
+          },
+          layout: {
+            hLineWidth: () => 0.6,
+            vLineWidth: () => 0.6,
+            hLineColor: () => '#d8e8ee',
+            vLineColor: () => '#d8e8ee',
+            fillColor: () => '#f8fcfd',
+            paddingLeft: () => 12,
+            paddingRight: () => 12,
+            paddingTop: () => 10,
+            paddingBottom: () => 10,
+          },
+        },
+        { text: 'LAUDO TÉCNICO', fontSize: 11, bold: true, color: '#0a6787', margin: [0, 24, 0, 7] },
+        {
+          table: {
+            widths: ['*'],
+            body: [[{
+              text: possuiLaudo ? laudoTecnico : 'Nenhum laudo informado.',
+              fontSize: 10,
+              color: possuiLaudo ? '#1f2937' : '#64748b',
+              italics: !possuiLaudo,
+              alignment: 'justify',
+              lineHeight: 1.35,
+              margin: [13, 13, 13, 13],
+            }]],
+          },
+          layout: {
+            hLineWidth: () => 0.8,
+            vLineWidth: () => 0.8,
+            hLineColor: () => '#c9e2eb',
+            vLineColor: () => '#c9e2eb',
+            fillColor: () => '#ffffff',
+          },
+        },
+        {
+          columns: [
+            { width: '*', text: '' },
+            {
+              width: 250,
+              stack: [
+                {
+                  canvas: [{ type: 'line', x1: 0, y1: 0, x2: 250, y2: 0, lineWidth: 0.8, lineColor: '#0a6787' }],
+                  margin: [0, 0, 0, 8],
+                },
+                { text: 'Assinatura do Responsável', alignment: 'center', fontSize: 10, bold: true, color: '#1f2937' },
+                { text: 'CNPJ: 68.753.232/0001-54', alignment: 'center', fontSize: 8, color: '#64748b', margin: [0, 3, 0, 0] },
+              ],
+            },
+            { width: '*', text: '' },
+          ],
+          margin: [0, 58, 0, 0],
+        },
       ]
     };
     pdfMake.createPdf(docDefinition).print();
