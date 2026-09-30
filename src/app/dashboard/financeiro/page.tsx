@@ -270,7 +270,7 @@ function FinanceiroForm() {
           rightLines: [
             { text: `Receitas: R$ ${totalEntradas.toFixed(2)}`, bold: true, color: '#047857' },
             { text: `Despesas: R$ ${totalSaidas.toFixed(2)}`, bold: true, color: '#b91c1c' },
-            { text: `Saldo antes das taxas: R$ ${saldoLiquido.toFixed(2)}`, bold: true, color: isPositivo ? '#111111' : '#b91c1c' },
+            { text: `Saldo: R$ ${saldoLiquido.toFixed(2)}`, bold: true, color: isPositivo ? '#111111' : '#b91c1c' },
             { text: `Receitas após taxas${receitasSemTaxa ? ' (parcial)' : ''}: R$ ${totalReceitasLiquidas.toFixed(2)}`, bold: true, color: '#047857' },
             { text: `Taxas registradas: R$ ${totalTaxasCartao.toFixed(2)}`, color: '#b91c1c' },
           ],
@@ -284,7 +284,7 @@ function FinanceiroForm() {
               [
                 { text: `RECEITAS (Entradas):\nR$ ${totalEntradas.toFixed(2)}`, bold: true, fillColor: '#ecfdf5', color: '#047857', margin: [5, 10, 5, 10], alignment: 'center' },
                 { text: `DESPESAS (Saídas):\nR$ ${totalSaidas.toFixed(2)}`, bold: true, fillColor: '#fef2f2', color: '#b91c1c', margin: [5, 10, 5, 10], alignment: 'center' },
-                { text: `SALDO ANTES DAS TAXAS:\nR$ ${saldoLiquido.toFixed(2)}`, bold: true, fillColor: isPositivo ? '#eff6ff' : '#fef2f2', color: isPositivo ? '#1d4ed8' : '#b91c1c', margin: [5, 10, 5, 10], alignment: 'center' }
+                { text: `SALDO:\nR$ ${saldoLiquido.toFixed(2)}`, bold: true, fillColor: isPositivo ? '#eff6ff' : '#fef2f2', color: isPositivo ? '#1d4ed8' : '#b91c1c', margin: [5, 10, 5, 10], alignment: 'center' }
               ]
             ]
           },
@@ -377,7 +377,7 @@ function FinanceiroForm() {
 
           <div className={`p-6 rounded-3xl shadow-sm border flex justify-between items-center relative overflow-hidden ${isPositivo ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'}`}>
             <div>
-              <p className={`text-xs font-bold uppercase mb-1 ${isPositivo ? 'text-blue-600' : 'text-red-600'}`}>Saldo antes das taxas</p>
+              <p className={`text-xs font-bold uppercase mb-1 ${isPositivo ? 'text-blue-600' : 'text-red-600'}`}>Saldo</p>
               <h3 className={`text-4xl font-black ${isPositivo ? 'text-blue-600' : 'text-red-600'}`}>R$ {saldoLiquido.toFixed(2)}</h3>
             </div>
           </div>
