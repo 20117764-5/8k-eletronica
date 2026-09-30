@@ -48,7 +48,7 @@ interface Transacao {
 
 const CATEGORIAS_DESPESA = [
   "Aluguel", "Energia Elétrica", "Água", "Internet / Telefone", 
-  "Material de Limpeza",
+  "Material de Limpeza", "Peças",
   "Salários / Comissões", "Impostos / Taxas", "Ferramentas / Equipamentos", "Outros"
 ];
 
