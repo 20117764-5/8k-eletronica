@@ -12,6 +12,8 @@ export interface LancamentoEditavel {
   data: string;
   forma_pagamento?: string;
   observacoes?: string;
+  numero_parcela?: number;
+  total_parcelas?: number;
 }
 
 export default function EditarLancamento({ lancamento, categoriasDespesa, onClose, onSaved }: {
@@ -27,7 +29,7 @@ export default function EditarLancamento({ lancamento, categoriasDespesa, onClos
     ? lancamento.data.slice(0, 10)
     : '';
   const categorias = Array.from(new Set([lancamento.categoria, ...(receita ? ['Venda de placas', 'Serviços', 'Outros'] : categoriasDespesa)]));
-  const pagamentos = Array.from(new Set([lancamento.forma_pagamento || '', 'Mercado Livre / Mercado Pago', 'Pix', 'Dinheiro', 'Cartão de crédito', 'Cartão de débito', 'Transferência', 'Outro'])).filter(Boolean);
+  const pagamentos = Array.from(new Set([lancamento.forma_pagamento || '', 'Mercado Livre / Mercado Pago', 'Mercado Pago', 'Pix', 'Dinheiro', 'Cartão de Crédito', 'Cartão de Débito', 'Transferência', 'Boleto', 'Outro'])).filter(Boolean);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
   const trava = useRef(false);
@@ -56,6 +58,7 @@ export default function EditarLancamento({ lancamento, categoriasDespesa, onClos
         observacoes: String(form.get('observacoes') || '').trim() || null,
       } : {
         ...comum,
+        forma_pagamento: String(form.get('forma_pagamento') || '').trim() || null,
         // Uma edição só de valor/descrição preserva exatamente a data armazenada.
         data_despesa: data === dataOriginal ? lancamento.data : new Date(`${data}T12:00:00`).toISOString(),
       };
@@ -90,6 +93,10 @@ export default function EditarLancamento({ lancamento, categoriasDespesa, onClos
               <label>Data *<input name="data" type="date" required defaultValue={dataOriginal} className={campo} /></label>
             </div>
             <label className="block">Categoria *<select name="categoria" required defaultValue={lancamento.categoria} className={campo}>{categorias.map(c => <option key={c}>{c}</option>)}</select></label>
+            {!receita && <>
+              <label className="block">Forma de pagamento *<select name="forma_pagamento" required defaultValue={lancamento.forma_pagamento || 'Dinheiro'} className={campo}>{pagamentos.map(p => <option key={p}>{p}</option>)}</select></label>
+              {(lancamento.total_parcelas || 1) > 1 && <p className="text-xs font-normal text-amber-700">Parcela {lancamento.numero_parcela || 1} de {lancamento.total_parcelas}. Esta edição altera apenas esta parcela.</p>}
+            </>}
             {receita && <>
               <label className="block">Forma de pagamento *<select name="forma_pagamento" required defaultValue={lancamento.forma_pagamento || ''} className={campo}><option value="" disabled>Selecione</option>{pagamentos.map(p => <option key={p}>{p}</option>)}</select></label>
               <label className="block">Observações<textarea name="observacoes" rows={3} maxLength={2000} defaultValue={lancamento.observacoes || ''} className={campo} /></label>

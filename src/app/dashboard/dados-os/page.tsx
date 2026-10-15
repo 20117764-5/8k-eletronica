@@ -452,8 +452,37 @@ function DadosOsForm() {
     }
   };
 
+  const handleFormKeyDown = (event: React.KeyboardEvent<HTMLFormElement>) => {
+    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+
+    const origem = event.target;
+    if (!(origem instanceof HTMLInputElement)) return;
+
+    const tiposQueNaoAvancam = ["button", "submit", "reset", "checkbox", "radio", "file", "hidden"];
+    if (tiposQueNaoAvancam.includes(origem.type) || origem.disabled || origem.readOnly) return;
+
+    event.preventDefault();
+
+    const campos = Array.from(
+      event.currentTarget.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+        'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])'
+      )
+    ).filter((campo) => {
+      const estilo = window.getComputedStyle(campo);
+      return estilo.display !== "none" && estilo.visibility !== "hidden";
+    });
+
+    const indiceAtual = campos.indexOf(origem);
+    const proximoCampo = campos[indiceAtual + (event.shiftKey ? -1 : 1)];
+    proximoCampo?.focus();
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="max-w-7xl mx-auto space-y-6 pb-12">
+    <form
+      onSubmit={handleSubmit}
+      onKeyDown={handleFormKeyDown}
+      className="max-w-7xl mx-auto space-y-6 pb-12"
+    >
       <datalist id="tipos-aparelho-os">
         {TIPOS_APARELHO_OS.map((tipo) => <option key={tipo} value={tipo} />)}
       </datalist>

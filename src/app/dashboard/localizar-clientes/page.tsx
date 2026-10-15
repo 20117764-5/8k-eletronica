@@ -270,6 +270,9 @@ export default function LocalizarClientesPage() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
+                        <Link href={`/dashboard/editar-cliente?id=${cliente.id}`} className="px-4 py-2 bg-white border border-[#0a6787] text-[#0a6787] text-xs font-black rounded-lg hover:bg-[#e0f7ff]">
+                          Editar dados
+                        </Link>
                         <Link href={`/dashboard/dados-os?clienteId=${cliente.id}`} className="px-4 py-2 bg-[#0a0a0a] text-white text-xs font-black rounded-lg hover:bg-[#242424]">
                           Nova O.S.
                         </Link>

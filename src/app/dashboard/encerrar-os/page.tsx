@@ -136,6 +136,7 @@ function EncerrarOsForm() {
     const dataGarantiaStr = dataGarantia.toLocaleDateString('pt-BR');
 
     const isReparado = condicao === 'Entregue e Reparado';
+    const isLixoEletronico = condicao === 'Lixo eletrônico';
 
     const servicosBody = servicos.map(s => [s.descricao, '1', `R$ ${Number(s.valor).toFixed(2)}`, `R$ ${Number(s.valor).toFixed(2)}`]);
     const pecasBody = pecas.map(p => [p.descricao, p.quantidade.toString(), `R$ ${Number(p.valor).toFixed(2)}`, `R$ ${(Number(p.quantidade) * Number(p.valor)).toFixed(2)}`]);
@@ -198,6 +199,8 @@ function EncerrarOsForm() {
         // TEXTO DE GARANTIA OU TERMO DE DEVOLUÇÃO
         isReparado ? {
           text: 'TERMO DE GARANTIA', bold: true, fontSize: 10, margin: [0, 0, 0, 5]
+        } : isLixoEletronico ? {
+          text: 'TERMO DE DESTINAÇÃO AO LIXO ELETRÔNICO', bold: true, fontSize: 10, margin: [0, 0, 0, 5]
         } : {
           text: 'TERMO DE DEVOLUÇÃO SEM REPARO', bold: true, fontSize: 10, margin: [0, 0, 0, 5]
         },
@@ -209,6 +212,11 @@ function EncerrarOsForm() {
             '3 - A garantia perderá efeito se for identificada violação de lacre, queda, conexão em voltagem errada ou danos da natureza.\n\n',
             { text: `VÁLIDO ATÉ: ${dataGarantiaStr} (90 dias)`, bold: true, fontSize: 12 }
           ]
+        } : isLixoEletronico ? {
+          text: [
+            `O aparelho acima descrito foi destinado ao lixo eletrônico na condição de: "${condicao}".\n`,
+            'O descarte será realizado de forma ambientalmente adequada, sem garantia ou possibilidade de retirada posterior pelo cliente.\n'
+          ]
         } : {
           text: [
             `O aparelho acima descrito está sendo devolvido ao cliente na condição de: "${condicao}".\n`,
@@ -216,10 +224,10 @@ function EncerrarOsForm() {
           ]
         },
 
-        { text: '\n\nDeclaro estar recebendo o equipamento constante nesta Ordem de Serviço.', alignment: 'center', margin: [0, 30, 0, 20] },
+        { text: isLixoEletronico ? '\n\nDestinação registrada pela 8K Eletrônica.' : '\n\nDeclaro estar recebendo o equipamento constante nesta Ordem de Serviço.', alignment: 'center', margin: [0, 30, 0, 20] },
         {
           columns: [
-            { text: '____________________________________________________\nASSINATURA DO CLIENTE', alignment: 'center' },
+            { text: isLixoEletronico ? '' : '____________________________________________________\nASSINATURA DO CLIENTE', alignment: 'center' },
             { text: '____________________________________________________\n8K ELETRÔNICA', alignment: 'center' }
           ]
         }
@@ -324,9 +332,11 @@ function EncerrarOsForm() {
               className="w-full px-4 py-4 bg-[#f8fcff] border-2 border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold text-lg focus:outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 cursor-pointer transition-all"
             >
               <option value="Entregue e Reparado">✅ Entregue e Reparado (Gera Garantia)</option>
+              <option value="Encerrada (Devolvido)">↩️ Encerrada (Devolvido)</option>
               <option value="Devolvido sem reparo (Orçamento Reprovado)">❌ Devolvido sem reparo (Orçamento Reprovado)</option>
               <option value="Devolvido sem conserto (Sem peça/solução)">⚠️ Devolvido sem conserto (Sem peça/solução)</option>
               <option value="Aparelho não apresentou defeito">🔍 Aparelho não apresentou defeito</option>
+              <option value="Lixo eletrônico">♻️ Lixo eletrônico</option>
             </select>
           </div>
 

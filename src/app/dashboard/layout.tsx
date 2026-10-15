@@ -210,6 +210,9 @@ export default function DashboardLayout({
           <Link href="/dashboard/localizar-os" className={navLinkClass('/dashboard/localizar-os')}>
             <span className="text-lg">🔍</span><span className="text-sm">Localizar O.S.</span>
           </Link>
+          <Link href="/dashboard/saidas-busca" className={navLinkClass('/dashboard/saidas-busca')}>
+            <span className="text-lg">🚚</span><span className="text-sm">Saídas / Busca</span>
+          </Link>
           <Link href="/dashboard/localizar-clientes" className={navLinkClass('/dashboard/localizar-clientes')}>
             <span className="text-lg">👥</span><span className="text-sm">Localizar Clientes</span>
           </Link>

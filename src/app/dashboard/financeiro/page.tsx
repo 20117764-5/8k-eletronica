@@ -42,15 +42,59 @@ interface Transacao {
   os_id?: number;
   forma_pagamento?: string;
   observacoes?: string;
+  numero_parcela?: number;
+  total_parcelas?: number;
   valor_liquido?: number | null;
   valor_taxa_cartao?: number;
 }
+
+type NovaDespesa = {
+  descricao: string;
+  valor: number;
+  categoria: string;
+  data_despesa: string;
+  forma_pagamento: string;
+  parcelas: number;
+};
 
 const CATEGORIAS_DESPESA = [
   "Aluguel", "Energia Elétrica", "Água", "Internet / Telefone", 
   "Material de Limpeza", "Peças",
   "Salários / Comissões", "Impostos / Taxas", "Ferramentas / Equipamentos", "Outros"
 ];
+
+const FORMAS_PAGAMENTO_DESPESA = [
+  'Dinheiro', 'PIX', 'Cartão de Crédito', 'Cartão de Débito', 'Transferência', 'Boleto', 'Mercado Pago', 'Outro'
+];
+
+function criarNovaDespesa(): NovaDespesa {
+  return {
+    descricao: '',
+    valor: 0,
+    categoria: CATEGORIAS_DESPESA[0],
+    data_despesa: new Date().toISOString().slice(0, 10),
+    forma_pagamento: 'Dinheiro',
+    parcelas: 1,
+  };
+}
+
+function distribuirValorEmParcelas(valorTotal: number, parcelas: number) {
+  const quantidade = Math.min(12, Math.max(1, Math.trunc(parcelas) || 1));
+  const totalEmCentavos = Math.round((Number(valorTotal) || 0) * 100);
+  const valorBase = Math.floor(totalEmCentavos / quantidade);
+  const centavosRestantes = totalEmCentavos % quantidade;
+
+  return Array.from({ length: quantidade }, (_, indice) =>
+    (valorBase + (indice < centavosRestantes ? 1 : 0)) / 100
+  );
+}
+
+function dataDaParcela(dataBase: string, indiceParcela: number) {
+  const [ano, mes, dia] = dataBase.split('-').map(Number);
+  const ultimoDiaDoMes = new Date(ano, mes + indiceParcela, 0).getDate();
+  const data = new Date(ano, mes - 1 + indiceParcela, Math.min(dia, ultimoDiaDoMes), 12);
+  return data.toISOString();
+}
 
 function normalizarTexto(valor?: string | null) {
   return (valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -73,9 +117,7 @@ function FinanceiroForm() {
   // Estados do Modal de Nova Despesa
   const [isDespesaModalOpen, setIsDespesaModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [novaDespesa, setNovaDespesa] = useState({
-    descricao: '', valor: 0, categoria: CATEGORIAS_DESPESA[0], data_despesa: new Date().toISOString().slice(0, 10)
-  });
+  const [novaDespesa, setNovaDespesa] = useState<NovaDespesa>(criarNovaDespesa);
 
   const mesFormatado = mesAtual.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase();
   const mesAnterior = () => setMesAtual(new Date(mesAtual.getFullYear(), mesAtual.getMonth() - 1, 1));
@@ -171,12 +213,25 @@ function FinanceiroForm() {
 
         extrato.push({
           id_unica: `desp-${desp.id}`,
-          editavel: { id: String(desp.id), tabela: 'despesas', descricao: desp.descricao, valor: Number(desp.valor), categoria: desp.categoria, data: desp.data_despesa },
+          editavel: {
+            id: String(desp.id),
+            tabela: 'despesas',
+            descricao: desp.descricao,
+            valor: Number(desp.valor),
+            categoria: desp.categoria,
+            data: desp.data_despesa,
+            forma_pagamento: desp.forma_pagamento || undefined,
+            numero_parcela: desp.numero_parcela ? Number(desp.numero_parcela) : undefined,
+            total_parcelas: desp.total_parcelas ? Number(desp.total_parcelas) : undefined,
+          },
           tipo: 'SAIDA',
           descricao: desp.descricao,
           categoria: desp.categoria,
           valor: Number(desp.valor),
-          data: desp.data_despesa
+          data: desp.data_despesa,
+          forma_pagamento: desp.forma_pagamento || undefined,
+          numero_parcela: desp.numero_parcela ? Number(desp.numero_parcela) : undefined,
+          total_parcelas: desp.total_parcelas ? Number(desp.total_parcelas) : undefined,
         });
       });
 
@@ -199,23 +254,44 @@ function FinanceiroForm() {
 
   const handleSalvarDespesa = async (e: React.FormEvent) => {
     e.preventDefault();
+    const descricao = novaDespesa.descricao.trim();
+    const parcelas = Math.min(12, Math.max(1, Math.trunc(Number(novaDespesa.parcelas) || 1)));
+    const valor = Number(novaDespesa.valor);
+
+    if (!descricao || !Number.isFinite(valor) || valor <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(novaDespesa.data_despesa)) {
+      alert('Informe descrição, data e um valor maior que zero.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('despesas').insert([{
-        descricao: novaDespesa.descricao,
-        valor: Number(novaDespesa.valor),
+      const valoresParcelas = distribuirValorEmParcelas(valor, parcelas);
+      const grupoParcelamento = parcelas > 1
+        ? `despesa-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+        : null;
+      const despesas = valoresParcelas.map((valorParcela, indice) => ({
+        descricao: parcelas > 1 ? `${descricao} — Parcela ${indice + 1}/${parcelas}` : descricao,
+        valor: valorParcela,
         categoria: novaDespesa.categoria,
-        data_despesa: new Date(novaDespesa.data_despesa).toISOString()
-      }]);
+        data_despesa: dataDaParcela(novaDespesa.data_despesa, indice),
+        forma_pagamento: novaDespesa.forma_pagamento,
+        numero_parcela: indice + 1,
+        total_parcelas: parcelas,
+        grupo_parcelamento: grupoParcelamento,
+      }));
+
+      const { error } = await supabase.from('despesas').insert(despesas);
 
       if (error) throw error;
 
       setIsDespesaModalOpen(false);
-      setNovaDespesa({ descricao: '', valor: 0, categoria: CATEGORIAS_DESPESA[0], data_despesa: new Date().toISOString().slice(0, 10) });
-      fetchFinanceiro(); // Atualiza a tela
+      setNovaDespesa(criarNovaDespesa());
+      const [ano, mes] = novaDespesa.data_despesa.split('-').map(Number);
+      setMesAtual(new Date(ano, mes - 1, 1));
+      alert(parcelas > 1 ? `${parcelas} parcelas foram lançadas nos respectivos meses.` : 'Despesa registrada com sucesso!');
     } catch (error) {
       console.error(error);
-      alert("Erro ao registrar saída.");
+      alert('Erro ao registrar a despesa. Se esta é a primeira despesa parcelada, execute o arquivo ativar-despesas-parceladas.sql no Supabase e tente novamente.');
     } finally {
       setIsSubmitting(false);
     }
@@ -484,7 +560,8 @@ function FinanceiroForm() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="font-bold text-[#0a6787]">{t.descricao}</div>
-                      {t.forma_pagamento && <div className="text-xs text-gray-500 mt-1">{t.os_id ? 'Pagamento' : 'Receita manual'} · {t.forma_pagamento}</div>}
+                      {t.forma_pagamento && <div className="text-xs text-gray-500 mt-1">{t.os_id ? 'Pagamento' : t.tipo === 'SAIDA' ? 'Despesa' : 'Receita manual'} · {t.forma_pagamento}</div>}
+                      {t.tipo === 'SAIDA' && t.total_parcelas && t.total_parcelas > 1 && <div className="text-xs text-gray-500 mt-1">Parcela {t.numero_parcela || 1} de {t.total_parcelas}</div>}
                       {t.os_id && t.valor_liquido != null && <div className="text-xs text-emerald-700 mt-1">Taxa: R$ {(t.valor_taxa_cartao || 0).toFixed(2)} · Líquido: R$ {t.valor_liquido.toFixed(2)}</div>}
                       {t.os_id && t.valor_liquido == null && <div className="text-xs text-amber-700 mt-1">Taxa não registrada neste encerramento.</div>}
                       {t.observacoes && <div className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">{t.observacoes}</div>}
@@ -544,11 +621,31 @@ function FinanceiroForm() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Categoria de Custo *</label>
-                <select value={novaDespesa.categoria} onChange={(e) => setNovaDespesa({...novaDespesa, categoria: e.target.value})} className="w-full px-4 py-3 bg-white border border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold outline-none focus:border-red-400" required>
-                  {CATEGORIAS_DESPESA.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Categoria de Custo *</label>
+                  <select value={novaDespesa.categoria} onChange={(e) => setNovaDespesa({...novaDespesa, categoria: e.target.value})} className="w-full px-4 py-3 bg-white border border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold outline-none focus:border-red-400" required>
+                    {CATEGORIAS_DESPESA.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Forma de pagamento *</label>
+                  <select value={novaDespesa.forma_pagamento} onChange={(e) => setNovaDespesa({...novaDespesa, forma_pagamento: e.target.value})} className="w-full px-4 py-3 bg-white border border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold outline-none focus:border-red-400" required>
+                    {FORMAS_PAGAMENTO_DESPESA.map(forma => <option key={forma} value={forma}>{forma}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[#dceef5] bg-white p-4">
+                <label className="block text-xs font-bold text-[#73a8bd] uppercase mb-1">Parcelamento</label>
+                <select value={novaDespesa.parcelas} onChange={(e) => setNovaDespesa({...novaDespesa, parcelas: Number(e.target.value)})} className="w-full px-4 py-3 bg-[#f8fcff] border border-[#e0f1f7] rounded-xl text-[#0a6787] font-bold outline-none focus:border-red-400">
+                  {Array.from({ length: 12 }, (_, indice) => indice + 1).map(quantidade => <option key={quantidade} value={quantidade}>{quantidade === 1 ? 'À vista (1 parcela)' : `${quantidade} parcelas mensais`}</option>)}
                 </select>
+                {novaDespesa.parcelas > 1 && (
+                  <p className="mt-3 text-xs font-semibold text-[#0a6787]">
+                    O total será dividido em {novaDespesa.parcelas} lançamentos mensais. A primeira parcela ficará na data escolhida e as próximas, nos meses seguintes. Valor por parcela: R$ {distribuirValorEmParcelas(novaDespesa.valor, novaDespesa.parcelas)[0].toFixed(2)}.
+                  </p>
+                )}
               </div>
 
               <div className="pt-4 border-t border-[#e0f1f7] flex justify-end gap-3 mt-6">
